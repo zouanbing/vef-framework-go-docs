@@ -86,7 +86,7 @@ _, err := db.NewUpdate().Model(&users).Bulk().Exec(ctx)
 err := db.NewUpdate().Model(user).WherePK().ReturningAll().Scan(ctx)
 ```
 
-> 框架会自动将 `created_at` 和 `created_by` 从 UPDATE 操作中排除，以保护创建审计数据。
+> 框架会在每种 UPDATE 形态上自动打上 `updated_at` 和 `updated_by`——基于模型的、`Set`/`SetExpr` 的、有列白名单的、批量更新均适用。`created_at` 和 `created_by` 会被自动从 UPDATE 中排除，以保护创建审计数据。显式 `Set("updated_at", ...)` 会被尊重——框架不会覆盖显式设置的审计列。
 
 ## DELETE 子句
 

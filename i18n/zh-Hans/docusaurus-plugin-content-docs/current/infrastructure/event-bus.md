@@ -154,6 +154,7 @@ Envelope 大小限制也是公开 publish 契约：
 | `event/transport/memory` | `memory` | 进程内、ordered、at-most-once。默认回退。 |
 | `event/transport/outbox` | `outbox` | 持久化、事务、durable、at-least-once、**publish-only**。一个 relay 把记录推到 sink transport。 |
 | `event/transport/redisstream` | `redis_stream` | durable、at-least-once、支持 group。跨进程扇出。 |
+| `event/transport/txmemory` | `tx_memory` | 进程内、事务、**不持久**。memory 的事务性版本：事件仅在业务事务提交后才可见，但不会持久化，commit 与 delivery 之间的崩溃会丢失帧。专为共享数据库的开发场景设计——此时 outbox relay 会随机认领各节点的行。不适用于生产。 |
 
 `PublishOnly` 很重要：只把路由配到 outbox 上，事件能发出去但永远没人能订阅到。订阅者要挂在 sink transport 上（outbox 的 `sink` 配置）。Bus 在解析 Subscribe 路由时会自动过滤掉 publish-only 的 transport。
 
@@ -229,6 +230,7 @@ Bus 会运行 FX group `vef:event:publish-middlewares` 和 `vef:event:consume-mi
 | `event/transport/memory` | `Name`, `Config`, `FullPolicy`, `FullPolicyError`, `FullPolicyBlock`, `FullPolicyDropOldest` |
 | `event/transport/outbox` | `Name`, `Config`, `Status`, `StatusPending`, `StatusProcessing`, `StatusCompleted`, `StatusFailed`, `StatusDead`, `Record`, `Repository` |
 | `event/transport/redisstream` | `Name` 和 `Config` |
+| `event/transport/txmemory` | `Name` 和 `Config` |
 
 `ChainPublish` 和 `ChainConsume` 会按升序 `Order` 排列 middleware；相同
 order 保留注册顺序。内置 cron job 名称是 `vef:event:outbox:relay`、
@@ -404,6 +406,38 @@ idle_group_retention     = "24h"
 idle_group_sweep_interval = "10m"
 ```
 
+## 进程内事务 Transport (`tx_memory`)
+
+`tx_memory` transport 满足 approval 和 storage 模块在启动时断言的事务路由要求
+（`Transactional: true`），但**在发布进程内投递**而非持久化。默认关闭且刻意不持久：
+
+```toml
+[vef.event.transports.tx_memory]
+enabled          = true
+queue_size       = 1024
+full_policy      = "error"   # error | block | drop_oldest
+publish_timeout  = "5s"
+```
+
+典型场景是团队的多台开发实例指向同一个数据库：outbox relay 的
+`ClaimBatch` 没有归属谓词，任何节点都可能认领任何节点的行——A 操作的事件
+handler 往往跑在 B 的机器上。路由到 `tx_memory` 让每个事件留在发布它的进程
+中，投递延迟从 relay 轮询间隔降为零。
+
+`tx_memory` 刻意设计为独立 transport 而非 `memory` 的事务模式：`memory`
+必须保持 `Transactional: false`，这样忘记启用 outbox 的生产部署会快速失败，
+而不是静默接受一个不持久的进程内路由。
+
+能力：`Transactional`，不 `Durable`，不 `Ordered`（release 在 commit 时发生，
+并发事务按 commit 顺序投递而非 publish 顺序），不 `AtLeastOnce`（用
+`WithGroup` 写的订阅者仍然可用，因为 bus 只在 at-least-once transport 上
+拒绝缺少 group 的订阅）。
+
+启用后框架会输出 `Warn`——这是开发 transport，不是生产选项。共享开发数据库
+也会带来其他抽奖问题（approval timeout scanner、eventual business-projection
+worker、storage delete worker、durable cron claim loop），`tx_memory` 只修复
+事件这一条线。
+
 ## 错误 Sentinel
 
 | 错误 | 含义 |
@@ -476,6 +510,7 @@ func registerUserProjections(lc fx.Lifecycle, bus event.Bus, inspector event.Rou
 | 发布要和业务写入一起提交 | `outbox`（→ sink） |
 | 跨进程投递，at-least-once | `redis_stream` |
 | 可靠审批 / saga 事件 | `outbox` + `redis_stream` sink |
+| 针对共享数据库的开发场景，事件保持在发布进程内 | `tx_memory` |
 
 ## 下一步
 

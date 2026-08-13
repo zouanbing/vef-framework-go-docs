@@ -36,7 +36,7 @@ body_limit = "32mib"
 
 - `name`：应用名，也会参与 JWT audience 的构造
 - `port`：Fiber HTTP 服务监听端口
-- `body_limit`：请求体大小限制；未配置时默认是 `32mib`
+- `body_limit`：请求体大小上限，按人类可读的字节大小解析；未配置时默认是 `32mib`
 - `trusted_proxies`：Fiber 信任其转发头的代理 IP/CIDR；为空时忽略 `X-Forwarded-For`
 
 ### `vef.api`
@@ -49,6 +49,9 @@ body_limit = "32mib"
 max    = 100   # 默认值
 period = "5m"  # 默认值
 ```
+
+限流器在进程内存中按操作 × 客户端（IP + principal）以滑动窗口计数，
+因此多节点部署下每个节点独立执行该限制。
 
 ### `vef.data_sources`
 
@@ -74,13 +77,15 @@ type = "sqlite"
 path = "./analytics.db"
 ```
 
-当前支持的 `type`（框架运行时已经注册的驱动）：
+当前支持的 `type`（即 `config.DBKind` 枚举，框架运行时已经注册的驱动）：
 
 - `postgres`
 - `mysql`
 - `sqlite`
-- `sqlserver`
 - `oracle`
+- `sqlserver`
+
+传入不支持的 kind 类型时启动会失败，返回 "unsupported database type" 错误。
 
 对 SQLite 来说，`path` 可以省略；省略后框架会使用共享内存数据库。
 
@@ -116,7 +121,7 @@ login_rate_limit = 6
 refresh_rate_limit = 1
 ```
 
-基于当前实现，有两个要点：
+运行时要点：
 
 - `secret` 是十六进制 JWT signing key。只建议在本地开发时留空；此时框架会生成进程内临时 key，token 无法跨重启或多节点继续使用。生产环境应生成并设置稳定的私有值
 - 内置 JWT token generator 签发的 access token 固定 `30m` 过期
@@ -217,7 +222,7 @@ secret_key = "base64-key"
 enabled = true       # /ws WebSocket 推送端点
 ```
 
-完整键位列表见[配置参考](../reference/configuration-reference#vefcron)
+完整键位列表见[配置参考](../reference/configuration-reference#vef-cron)
 与各模块指南：[持久化调度](../infrastructure/cron-store)、
 [集成引擎](../integration/overview)、[服务端推送](../infrastructure/push)。
 

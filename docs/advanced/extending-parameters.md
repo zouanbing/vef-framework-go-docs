@@ -11,7 +11,7 @@ Handler methods on an `api.Resource` declare their inputs as plain Go parameters
 For each declared parameter type, the handler param resolver manager tries, in order:
 
 1. **Exact type match** against the registered `api.HandlerParamResolver`s (the built-in list below, plus anything registered in `group:"vef:api:handler_param_resolvers"`).
-2. **`api.Params` / `api.Meta` embedding** — if the type embeds one of those sentinel types (or is a recognized meta type), the corresponding request section is decoded and validated into it.
+2. **`api.P` / `api.M` embedding** — if the type embeds one of those sentinel types (or is a recognized meta type such as `page.Pageable`), the corresponding request section is decoded and validated into it.
 3. **Resource field fallback** — a same-type field on the resource struct itself, letting a handler reference a dependency the resource already holds.
 
 If none of these match, resolution fails and the handler cannot be adapted.
@@ -31,8 +31,9 @@ Handler factories (functions that build a `fiber.Handler` at startup, e.g. `func
 | `mold.Transformer` | fixed value, injected at boot |
 | `storage.Service` | fixed value, injected at boot |
 | `datasource.Registry` | fixed value, injected at boot |
-| `api.Params` | decoded and validated from the request's params section |
-| `api.Meta` | decoded and validated from the request's meta section |
+| `expression.Engine` | fixed value, injected at boot |
+| `api.Params` | the request's raw params map, passed through as-is (no typed decoding or validation) |
+| `api.Meta` | the request's raw meta map, passed through as-is (no typed decoding or validation) |
 
 ### Built-in factory param resolvers
 

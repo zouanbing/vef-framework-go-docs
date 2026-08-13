@@ -13,14 +13,14 @@ sidebar_position: 2
 列表，由 `vef.Run` 和 `internal/apptest` 测试脚手架共用，保证两个 FX 图不会
 出现分叉）：
 
-`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> outbox -> redis-stream -> inbox -> schema -> monitor -> mcp -> push -> app`
+`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> tx_memory -> outbox -> redis-stream -> inbox -> schema -> monitor -> mcp -> push -> app`
 
 `datasource` 是单独的一步：它在同一个模块里把 `*sql.DB` 连接起来（通过
 `internal/database`）并包装成 `orm.DB`（通过 `internal/orm`）——启动流程里
-并不存在独立的 `database` 或 `orm` 步骤。`outbox`、`redis-stream`、`inbox`
-是事件传输子模块——即 outbox 传输模块、redis-stream 传输模块和 inbox
-模块——排在 `sequence` 之后、`schema` 之前注册。`js` 是共享 JS 引擎模块，
-`push` 是 WebSocket 推送模块。
+并不存在独立的 `database` 或 `orm` 步骤。`tx_memory`、`outbox`、`redis-stream`、
+`inbox` 是事件传输子模块——即 tx_memory 传输模块、outbox 传输模块、redis-stream
+传输模块和 inbox 模块——排在 `sequence` 之后、`schema` 之前注册。`js` 是共享
+JS 引擎模块，`push` 是 WebSocket 推送模块。
 
 注意清单顺序只是为了可读性：FX 按声明的依赖关系解析实际构建顺序，真正
 重要的是依赖形状——
@@ -28,7 +28,8 @@ sidebar_position: 2
 - 配置供给一切
 - datasource 供给需要 `orm.DB` 的 API 处理器
 - 安全模块供给受认证请求
-- 事件传输子模块（outbox、redis-stream、inbox）构建在核心 `event` 模块之上
+- 事件传输子模块（tx_memory、outbox、redis-stream、inbox）构建在核心
+  `event` 模块之上
 - storage、monitor、schema、MCP、push 都在 app 开始监听前完成装配
 
 ## `vef.Run(...)` 实际做的事情
@@ -94,19 +95,20 @@ func main() {
 
 根据当前实现，常见顺序大致是：
 
-- compression
-- headers
-- CORS
-- content type 检查
-- request ID
-- request logger 绑定
-- panic recovery
-- request record logging
+- compression（`-1000`）
+- headers（`-900`）
+- CORS（`-800`）
+- body-encoding（`-750`，将客户端可选的 `X-Body-Encoding` 请求体解码回原始 JSON，作用域 `/api`）
+- content type（`-700`，JSON/multipart 检查，作用域 `/api`）
+- request ID（`-650`）
+- request logger 绑定（`-600`）
+- panic recovery（`-500`）
+- request record logging（`-100`）
 - API 路由
-- push WebSocket 端点（order 450；启用集成模块时其入站网关位于 400）
-- MCP 端点中间件（order 500）
-- storage 文件代理路由（order 900）
-- SPA fallback middleware（order 1000）
+- push WebSocket 端点（order `450`；启用集成模块时其入站网关位于 `400`）
+- MCP 端点中间件（order `500`）
+- storage 文件代理路由（order `900`）
+- SPA fallback middleware（order `1000`）
 
 这意味着哪怕请求根本没有进入 API engine，某些 app 级中间件也一样会执行。
 

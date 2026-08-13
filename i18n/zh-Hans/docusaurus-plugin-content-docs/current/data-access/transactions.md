@@ -137,6 +137,73 @@ tx, err := db.BeginTx(ctx, &sql.TxOptions{
 
 传给 `RunInTx` 或 `BeginTx` 的 context 管辖整个事务。如果它在提交前被取消（或超过 deadline），`database/sql` 会回滚事务，进行中的查询以 context 错误失败，`RunInTx` 把这个错误返回给调用方。
 
+## 专用连接：RunOnConnection
+
+当你需要让所有语句——有状态会话变量、advisory lock、多步 DDL 脚本——都跑在同一条物理连接上时，使用 `RunOnConnection`：
+
+```go
+err := db.RunOnConnection(ctx, func(ctx context.Context, conn orm.DB) error {
+    // 此回调中的所有语句共享同一条连接。
+    _, err := conn.NewRaw("SET @my_var = 42").Exec(ctx)
+    if err != nil {
+        return err
+    }
+    return nil
+})
+```
+
+| 方法 | 签名 |
+| --- | --- |
+| `RunOnConnection` | `func(ctx context.Context, fn func(context.Context, DB) error) error` |
+
+行为：
+
+- 回调收到的是一个连接作用域的 `orm.DB`。内部所有查询——`NewSelect`、`NewRaw` 等——都运行在同一条专用连接上。嵌套的 `RunOnConnection` 调用复用该连接，不再获取新连接。
+- 在连接作用域内调用 `RunInTx` 会开启一个运行在该连接上的**真实事务**（不是 savepoint）。该事务内注册的 `OnCommit` 钩子会在事务提交时触发。
+- 从事务作用域的 `orm.DB` 上调用 `RunOnConnection` 会返回 `orm.ErrRunOnConnectionInTx`——事务已经独占其连接。
+- 连接在回调返回时自动释放，即使出错也会释放。回调错误和关闭连接的错误通过 `errors.Join` 合并。
+
+`RunOnConnection` 适合 MySQL 的 `GET_LOCK`/`RELEASE_LOCK`、`SET` 会话变量，以及任何需要绑定到一条连接上的工作。它不是 `RunInTx` 的替代品——只有当你需要连接亲和性，而不是事务边界时才使用它。
+
+## OnCommit：事务提交后执行
+
+`orm.OnCommit` 注册一个回调，在包围它的 `RunInTx`（或 `RunInReadOnlyTx`）成功提交后执行：
+
+```go
+err := db.RunInTx(ctx, func(ctx context.Context, tx orm.DB) error {
+    if _, err := tx.NewInsert().Model(order).Exec(ctx); err != nil {
+        return err
+    }
+
+    // 注册一个只在事务提交后才触发的回调。
+    return orm.OnCommit(ctx, func(ctx context.Context) {
+        // 派发进程内事件、使缓存失效等。
+        // 这里在提交之后运行——无法回滚。
+    })
+})
+```
+
+| API | 签名 |
+| --- | --- |
+| `OnCommit` | `func(ctx context.Context, fn func(context.Context)) error` |
+
+语义：
+
+- 回调在**最外层事务提交后**运行，运行在一个脱离取消的 context 上（`context.WithoutCancel`）。已取消请求的调用方无法阻止其事务已提交的工作继续执行。
+- 回调按注册顺序执行。如果你先注册 A 再注册 B，A 先于 B 触发。
+- 回调无法使事务失败——到它运行时提交已经持久化。回调自行负责错误处理；panic 会被记录日志并恢复。
+- 嵌套 `RunInTx`（savepoint）内注册的回调，在该 savepoint 回滚时会被丢弃。只有那些存活到最外层提交的注册才会真正触发。
+- 在未打开的 `RunInTx` / `RunInReadOnlyTx` 作用域外调用 `OnCommit` 会返回 `orm.ErrNoCommitScope`。这包括 `BeginTx` 事务——手动 API 不在 context 上携带 commit-hook 收集器。
+- 从事务已结束后存活的 goroutine 中注册，同样返回 `ErrNoCommitScope`——hook 收集器在提交后关闭，迟到的注册会报错而不是静默永不执行。
+
+典型用途：
+
+- 写入持久化后使进程内缓存失效
+- 派发一个不得在回滚时触发的非事务性事件
+- 入队一个其输入仅在提交后才有效的后台任务
+
+`OnCommit` 是"只有当外围工作单元已持久化时才必须执行"的接缝。不要用它做必须参与事务的工作——这些工作应在事务回调内部完成。
+
 ## 后台代码中的事务
 
 Cron job、事件订阅者等运行在 HTTP 请求之外的代码没有请求 context，所以 `contextx.DB(ctx)` 在那里返回 `nil`（见[扩展 Handler 参数](../advanced/extending-parameters)）。应改用依赖注入获取 `orm.DB`：任何构造函数或 `vef.Invoke` 函数都可以声明一个 `orm.DB` 参数，拿到的就是主数据源。

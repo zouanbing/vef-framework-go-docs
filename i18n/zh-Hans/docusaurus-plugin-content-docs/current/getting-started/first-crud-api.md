@@ -68,7 +68,7 @@ type Product struct {
 - `bun.BaseModel` 把结构体绑定到 `app_product` 表，别名为 `ap`
 - `orm.FullAuditedModel` 提供 `ID`、`CreatedAt`、`CreatedBy`、`CreatedByName`、`UpdatedAt`、`UpdatedBy` 和 `UpdatedByName`
 
-这些框架托管的字段从不需要你手动赋值。插入时，框架会为空字符串主键生成一个紧凑的字符串 ID，并填充 `created_at` / `created_by`；更新时会依据当前操作者维护 `updated_at` / `updated_by`。基础模型的完整目录见[模型](../data-access/models.md)。
+这些框架托管的字段从不需要你手动赋值。插入时，框架会为空字符串主键生成一个紧凑的字符串 ID，填充 `created_at` / `created_by`，并初始化 `updated_at` / `updated_by`；更新时会依据当前操作者维护 `updated_at` / `updated_by`。基础模型的完整目录见[模型](../data-access/models.md)。
 
 ## 2. 创建数据表
 
@@ -244,10 +244,10 @@ enabled = true
 
 [[vef.event.routing]]
 pattern = "vef.storage.*"
-transports = ["outbox"]
+transports = ["outbox", "memory"]
 ```
 
-相比快速开始，最后两个配置块是新增的。通用写操作会在事务内执行[文件存储](../infrastructure/storage.md)生命周期，而存储模块通过事务性传输发布领域事件——如果 `vef.storage.*` 事件没有这样的路由，框架会在启动时快速失败。启用 outbox 传输（它会自动创建自己的表）并把存储事件路由过去即可通过该检查。
+相比快速开始，最后两个配置块是新增的。通用写操作会在事务内执行[文件存储](../infrastructure/storage.md)生命周期，而存储模块通过事务性传输发布领域事件——如果 `vef.storage.*` 事件没有这样的路由，框架会在启动时快速失败。启用 outbox 传输（它会自动创建自己的表）并把存储事件路由过去即可通过该检查；路由中把 `"memory"`（outbox 的默认 sink）与 `"outbox"` 写在一起，事件才能在进程内被订阅。
 
 启动应用：
 
@@ -293,7 +293,7 @@ curl http://localhost:8080/api \
 
 ### 分页查询
 
-过滤条件来自 `params`（即你的 `ProductSearch`），分页参数来自 `meta`：
+过滤条件来自 `params`（即你的 `ProductSearch`），分页参数来自 `meta`。未传的值回退为 `page` 1、`size` 15，`size` 上限为 1000：
 
 ```bash
 curl http://localhost:8080/api \

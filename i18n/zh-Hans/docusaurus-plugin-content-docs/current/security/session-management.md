@@ -121,6 +121,10 @@ type SessionRevocationListener interface {
 }
 ```
 
+| API | 契约 |
+| --- | --- |
+| `security.NewSessionRevocationNotifier(listeners []SessionRevocationListener) *SessionRevocationNotifier` | 在已注册的监听器之上构造 notifier，丢弃 nil 项；由 DI 注入 |
+
 - 用 `vef.ProvideSessionRevocationListener(...)` 注册。每个
   `SessionRevocation` 携带 `SessionID` 与 `UserID`。
 - 框架自己的吊销路径会触发监听器。直接对 `SessionStore` 做吊销的应用代码

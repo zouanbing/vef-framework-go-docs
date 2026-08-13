@@ -44,6 +44,18 @@ if err := resp.JSON(&out); err != nil {
 }
 ```
 
+## Types
+
+| Type | Contract |
+| --- | --- |
+| `Client` | Immutable HTTP client for calling one upstream service; safe for concurrent use. Construct one per third-party system via `New`. |
+| `Option` | Function type `func(*clientConfig)` that customizes client construction. |
+| `Request` | Single-use fluent request builder created by `Client.NewRequest`; re-executing one fails with `ErrRequestReused`. |
+| `Response` | Fully buffered outcome of a call — the body has been read and the connection released, so it is inert data safe to keep and share. |
+| `RetryConfig` | Automatic retry policy configuration, enabled via `WithRetry`. Zero fields fall back to documented defaults. |
+| `RequestHook` | Hook type `func(req *Request) error` that runs after a request is fully built and before it is sent. |
+| `ResponseHook` | Hook type `func(resp *Response) error` that runs after a response arrives and its body is buffered. |
+
 ## Client
 
 `httpx.New(opts ...Option)` validates options eagerly: a malformed base or
@@ -62,7 +74,7 @@ for concurrent use; per-call state lives in the `Request`.
 | `WithProxy(url)` | outbound proxy |
 | `WithTLSConfig(cfg)` | custom TLS configuration |
 | `WithCookieJar(jar)` | cookie persistence across calls |
-| `WithMaxRedirects(n)` | redirect cap (default 10; exceeding fails with `ErrTooManyRedirects`) |
+| `WithMaxRedirects(n)` | redirect cap (default 10; zero disables following and returns the 3xx response as-is) |
 | `WithMaxResponseBody(n)` | response body byte cap (`ErrResponseTooLarge`) |
 | `WithRequestHook(hooks...)` | runs after a request is fully built and before it is sent — the hook point for signing, audit, logging; a returned error aborts the call |
 | `WithResponseHook(hooks...)` | runs after a response arrives and its body is buffered |
@@ -70,6 +82,35 @@ for concurrent use; per-call state lives in the `Request`.
 
 The client sends `User-Agent: vef/<version>` unless the application sets its
 own.
+
+## Hooks
+
+Hook types receive the finalized request or response and return an error to
+abort the call:
+
+| Type | Signature | Runs |
+| --- | --- | --- |
+| `RequestHook` | `func(req *Request) error` | after the request is built, before it is sent |
+| `ResponseHook` | `func(resp *Response) error` | after the response arrives and its body is buffered |
+
+A `RequestHook` is the place to sign, audit, or log; it may still mutate
+headers. A `ResponseHook` can inspect the buffered response. Multiple hooks
+run in registration order.
+
+```go
+client, err := httpx.New(
+    httpx.WithRequestHook(func(req *httpx.Request) error {
+        req.SetHeader("X-Signature", sign(req.Method(), req.Body()))
+        return nil
+    }),
+    httpx.WithResponseHook(func(resp *httpx.Response) error {
+        if resp.StatusCode() >= 500 {
+            metrics.RecordUpstreamError(resp.StatusCode())
+        }
+        return nil
+    }),
+)
+```
 
 ## Request
 
@@ -121,6 +162,42 @@ resolve to defaults:
 The default policy retries a transport error or a `429`/`502`/`503`/`504`
 response, and **only for idempotent methods** (GET, HEAD, PUT, DELETE,
 OPTIONS, TRACE) — a POST is never retried unless `RetryIf` allows it.
+
+A streamed request body (`SetBodyReader`) cannot be replayed, so it never
+retries even when retries are enabled.
+
+## Testing with a Stub Transport
+
+`WithTransport` is the seam for test doubles, tracing round-trips, and
+custom dialing. The test suite uses a small `http.RoundTripper` stub like
+this:
+
+```go
+type StubTransport struct {
+    status int
+    body   string
+}
+
+func (s *StubTransport) RoundTrip(*http.Request) (*http.Response, error) {
+    return &http.Response{
+        StatusCode: s.status,
+        Status:     fmt.Sprintf("%d %s", s.status, http.StatusText(s.status)),
+        Header:     make(http.Header),
+        Body:       io.NopCloser(strings.NewReader(s.body)),
+    }, nil
+}
+```
+
+Wire it into a client and every request returns the canned response without
+leaving the process:
+
+```go
+client, _ := httpx.New(
+    httpx.WithTransport(&StubTransport{status: http.StatusTeapot, body: "stubbed"}),
+)
+
+resp, err := client.NewRequest().Get(ctx, "http://example.test/anything")
+```
 
 ## Error Sentinels
 

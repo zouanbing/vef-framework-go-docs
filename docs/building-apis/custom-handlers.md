@@ -156,7 +156,7 @@ Resolution order:
 | tagged dive field match | searches nested fields under `api:"dive"` |
 | embedded field match | searches anonymous embedded fields |
 
-That means custom services, repositories, or helpers can be injected by storing them as fields on the resource.
+That means custom services, repositories, or helpers can be injected by storing them as fields on the resource. If the field's type exposes a `WithLogger(logx.Logger)` method, the framework calls it with the request logger and injects the returned copy, so the service logs in the request context.
 
 ## Supported Factory Parameters
 

@@ -208,6 +208,10 @@ type CodeSetInspector interface {
 }
 ```
 
+`CodeSetInfo` has fields `CodeSet` and `Name`. `CodeInfo` has fields `Code`
+and `Label` (`CodeInfo.Code` is the canonical code value, `CodeInfo.Label`
+is its display name).
+
 Consumers type-assert for it and degrade gracefully when it is absent. The
 [integration module](../integration/code-maps#the-host-code-set-catalog) uses
 it to power the code-mapping editor's pickers and to validate code map

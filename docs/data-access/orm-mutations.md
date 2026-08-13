@@ -86,7 +86,7 @@ _, err := db.NewUpdate().Model(&users).Bulk().Exec(ctx)
 err := db.NewUpdate().Model(user).WherePK().ReturningAll().Scan(ctx)
 ```
 
-> The framework automatically excludes `created_at` and `created_by` from UPDATE operations to preserve creation audit data.
+> The framework stamps `updated_at` and `updated_by` on every UPDATE shape — model-based, `Set`/`SetExpr`, column whitelist, or bulk. `created_at` and `created_by` are automatically excluded from UPDATE to preserve creation audit data. An explicit `Set("updated_at", ...)` is respected — the framework does not overwrite an explicitly set audit column.
 
 ## DELETE Clause
 

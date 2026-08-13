@@ -24,8 +24,8 @@ MCP 模块始终在启动链中，但 MCP server 只有在满足下面条件时�
 这个端点是 Streamable HTTP MCP endpoint。应用 middleware 会以 order `500`
 把它注册到所有 HTTP method。
 
-Server identity 优先来自显式提供的 `mcp.ServerInfo`。如果没有提供，server
-name 会依次回退到 `vef.app.name` 和 `vef-mcp-server`；默认 version 是
+Server identity 的各字段在非空时优先取自 `mcp.ServerInfo`。server name 依次
+回退到 `vef.app.name` 和 `vef-mcp-server`；version 回退到
 `version.VEFVersion`，默认 instructions 为空。
 
 ## 模块提供了什么
@@ -94,7 +94,7 @@ helpers 和 tool-result helpers。
 | `mcp.NewToolResultError(message)` | 返回错误 tool result |
 | `mcp.GetPrincipalFromContext(ctx)` | 从 MCP request context 读取认证后的 VEF principal；不存在时返回 `security.PrincipalAnonymous` |
 | `mcp.DBWithOperator(ctx, db)` | 把 MCP principal ID 绑定为 `orm.PlaceholderKeyOperator` |
-| `mcp.ResourceNotFoundError` | SDK resource-not-found error 别名 |
+| `mcp.ResourceNotFoundError` | SDK `ResourceNotFoundError(uri string) error` 构造函数的别名；请求的 resource 不存在时，resource handler 应返回它 |
 
 ## 依赖注入扩展点
 
@@ -125,7 +125,7 @@ helpers 和 tool-result helpers。
 
 行为说明：
 
-- 只允许 read-only `SELECT` 语句；SQL 会在执行前检查，带数据修改语义的 CTE 或有副作用的语句会被拒绝
+- 只允许 read-only `SELECT` / `SHOW` / `DESCRIBE` 语句；SQL 会在执行前检查，带数据修改语义的 CTE 或有副作用的语句会被拒绝
 - `sql` 必填，且不能为空
 - 查询结果会以 JSON 文本内容返回
 - tool 失败会作为 MCP tool error result 返回，而不是作为 Go handler error 返回

@@ -204,6 +204,8 @@ The framework standardizes these common audit columns:
 
 Not every model embeds all of these fields. `orm.CreationTrackedModel` contributes the `created_*` subset. `orm.FullTrackedModel` and `orm.FullAuditedModel` contribute both subsets.
 
+The framework stamps `updated_at` and `updated_by` on every UPDATE shape — whether the query is model-based, uses `Set`/`SetExpr`, has a column whitelist, or is a bulk update. `created_at` and `created_by` are excluded from UPDATE automatically (they carry `skipupdate` and are skipped by the framework's `beforeUpdate` hook). The one exception is an explicit `Set("updated_at", ...)` or `Set("updated_by", ...)` — the framework respects caller intent and does not overwrite an explicitly set audit column.
+
 The framework also exports audit column and field name constants:
 
 ```go

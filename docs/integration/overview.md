@@ -63,9 +63,12 @@ type Contract struct {
 
 Schemas must be self-contained JSON Schema documents (draft 2020-12); they
 are compiled at save time (`ErrInvalidSchema`) so a broken contract never
-reaches an invocation. Input is validated before the adapter script runs and
-the script's return value is validated after, in both flows — an adapter can
-never hand business code an out-of-contract model.
+reaches an invocation. Outbound validates the input before the adapter script
+runs and the script's return value after. Inbound enforces the schemas at
+`dispatch`: the input is validated before the business handler runs and the
+handler's output before it returns to the script (the vendor-facing reply
+itself is not schema-validated). In both flows an adapter can never hand
+business code an out-of-contract model.
 
 `Labels` are stored and filtered by the engine but never interpreted. The
 shared `orm.ValidateLabels` rule applies (the same one behind approval flow
@@ -102,6 +105,17 @@ type System struct {
   whole script run (a different axis, inherited from
   `vef.integration.run_timeout` when zero).
 
+### Data source mode
+
+`DataSourceMode` gates script write access to a system's direct database. An
+empty mode defaults to read-only.
+
+| Symbol | Value | Meaning |
+| --- | --- | --- |
+| `DataSourceMode` | `string` | type declaring how far adapter scripts may go against a system's database |
+| `DataSourceModeReadOnly` | `read_only` | scripts may only query (`sql.queryList` / `sql.queryOne`); `sql.execute` throws |
+| `DataSourceModeReadWrite` | `read_write` | scripts may also write via `sql.execute` |
+
 ### Secrets at rest
 
 Sensitive auth parameter values and the data-source password are encrypted
@@ -130,6 +144,15 @@ A system implements a contract with exactly one adapter per direction. The
 script environments differ per direction and are documented in
 [Outbound Calls](./outbound#adapter-script-environment) and
 [Inbound Delivery](./inbound#adapter-script-environment).
+
+### Direction
+
+`Direction` selects the flow an adapter implements.
+
+| Symbol | Value | Meaning |
+| --- | --- | --- |
+| `DirectionOutbound` | `outbound` | business code invokes the external system |
+| `DirectionInbound` | `inbound` | the external system calls into your application |
 
 ## Route
 
@@ -184,18 +207,18 @@ truncated to `capture_limit`. An hourly sweep prunes rows older than
 `integration.FailureKind` is the single classification shared by invocation
 logs, statistics, and API errors; an empty value means success.
 
-| Kind | Meaning |
-| --- | --- |
-| `input_invalid` | input rejected by the contract's input schema before the script ran |
-| `output_invalid` | script return value rejected by the output schema |
-| `upstream` | failure the external system itself signaled (`errors.upstream(...)`) |
-| `transport` | wire call never completed (connection refused, TLS failure) |
-| `timeout` | invocation exceeded its run timeout |
-| `canceled` | caller canceled the invocation |
-| `script` | uncaught script exception or compile error — an adapter bug |
-| `config` | auth scheme unregistered, credential undecryptable, and similar |
-| `auth` | inbound delivery rejected by inbound auth verification |
-| `handler` | inbound business handler returned an error after a successful dispatch |
+| Constant | Kind | Meaning |
+| --- | --- | --- |
+| `FailureInputInvalid` | `input_invalid` | input rejected by the contract's input schema before the script ran |
+| `FailureOutputInvalid` | `output_invalid` | script return value rejected by the output schema |
+| `FailureUpstream` | `upstream` | failure the external system itself signaled (`errors.upstream(...)`) |
+| `FailureTransport` | `transport` | wire call never completed (connection refused, TLS failure) |
+| `FailureTimeout` | `timeout` | invocation exceeded its run timeout |
+| `FailureCanceled` | `canceled` | caller canceled the invocation |
+| `FailureScript` | `script` | uncaught script exception or compile error — an adapter bug |
+| `FailureConfig` | `config` | auth scheme unregistered, credential undecryptable, and similar |
+| `FailureAuth` | `auth` | inbound delivery rejected by inbound auth verification |
+| `FailureHandler` | `handler` | inbound business handler returned an error after a successful dispatch |
 
 ## Statistics
 
@@ -210,43 +233,58 @@ it through `sys/monitor.get_integration_stats`
 by verification aggregate under an empty `contract` — the contract code is
 unvalidated caller input at rejection time.
 
+## Route Diagnostics
+
+The `diagnose_routes` operation computes a point-in-time report of routing
+table gaps (`RouteDiagnostics`). Each finding carries a `RouteFindingKind`.
+
+| Symbol | Value | Meaning |
+| --- | --- | --- |
+| `RouteFindingKind` | `string` | type classifying one routing diagnostic finding |
+| `RouteFindingDanglingAdapter` | `dangling_adapter` | contract-scoped route whose target system has no enabled adapter for that contract |
+| `RouteFindingWildcardGap` | `wildcard_gap` | enabled contract a wildcard/default route cannot serve because its target system has no enabled adapter for it |
+| `RouteFindingDisabledSystem` | `disabled_system` | enabled route targeting a disabled system |
+| `RouteFindingDisabledContract` | `disabled_contract` | enabled route scoped to a disabled contract |
+| `RouteFindingUncoveredContract` | `uncovered_contract` | enabled contract that resolves to no rule under a route key present in the routing table |
+
 ## Error Codes
 
 Integration API errors use response codes `2600`–`2699` and ride HTTP 200
 with the failure in the body code, except where noted.
 
-| Code | Error | Meaning |
-| --- | --- | --- |
-| `2600` | `ErrContractNotFound` | contract lookup failed |
-| `2601` | `ErrContractDisabled` | contract is disabled |
-| `2602` | `ErrSystemNotFound` | system lookup failed |
-| `2603` | `ErrSystemDisabled` | system is disabled |
-| `2604` | `ErrAdapterNotFound` | no adapter binds the system to the contract in that direction |
-| `2605` | `ErrAdapterDisabled` | adapter is disabled |
-| `2606` | `ErrRouteNotFound` | route key matches no rule |
-| `2607` | `ErrTargetAmbiguous` | both `WithSystem` and `WithRoute` were passed |
-| `2608` | `ErrInputInvalid(detail)` | input rejected by the input schema |
-| `2609` | `ErrOutputInvalid(detail)` | script return rejected by the output schema |
-| `2610` | `ErrUpstreamFailed(message)` | failure signaled by the external system |
-| `2611` | `ErrTransportFailed` | wire call never completed |
-| `2612` | `ErrInvocationTimeout` | run timeout exceeded |
-| `2613` | `ErrScriptFailed(detail)` | script threw or failed to compile |
-| `2614` | `ErrUnknownAuthScheme(scheme)` | system references an unregistered auth scheme |
-| `2615` | `ErrInvalidSchema(detail)` | contract schema rejected at save time |
-| `2616` | `ErrInvalidScript(detail)` | adapter script rejected at save time |
-| `2617` | `ErrInvalidAuthParams(detail)` | auth configuration refused by its scheme |
-| `2618` | `ErrInvalidRouteRef` | route references a missing contract or system |
-| `2619` | `ErrInvalidBaseURL` | system base URL is not an absolute URL |
-| `2620` | `ErrInvalidDataSource(detail)` | system data source incomplete or credential unprocessable |
-| `2621` | `ErrInvalidDirection` | adapter direction outside the known flows |
-| `2622` | `ErrInboundAuthFailed` | inbound delivery failed verification (HTTP 401, deliberately uniform) |
-| `2623` | `ErrInboundHandlerMissing` | inbound contract has no registered handler (HTTP 501) |
-| `2624` | `ErrInvocationCanceled` | caller canceled the invocation |
-| `2625` | `ErrInvalidEnvelope(detail)` | outbound envelope config rejected at save time |
-| `2626` | `ErrInvalidLabel` | contract label key/value failed validation |
-| `2627` | `ErrMissingCodeMap(codeSet)` | codes lookup against a code set with no enabled map |
-| `2628` | `ErrUnmappedValue(codeSet, value)` | value unmapped under the reject policy |
-| `2629` | `ErrInvalidCodeMap(detail)` | code map definition rejected at save time |
+| Code | Constant | Error | Meaning |
+| --- | --- | --- | --- |
+| `2600` | `ErrCodeContractNotFound` | `ErrContractNotFound` | contract lookup failed |
+| `2601` | `ErrCodeContractDisabled` | `ErrContractDisabled` | contract is disabled |
+| `2602` | `ErrCodeSystemNotFound` | `ErrSystemNotFound` | system lookup failed |
+| `2603` | `ErrCodeSystemDisabled` | `ErrSystemDisabled` | system is disabled |
+| `2604` | `ErrCodeAdapterNotFound` | `ErrAdapterNotFound` | no adapter binds the system to the contract in that direction |
+| `2605` | `ErrCodeAdapterDisabled` | `ErrAdapterDisabled` | adapter is disabled |
+| `2606` | `ErrCodeRouteNotFound` | `ErrRouteNotFound` | route key matches no rule |
+| `2607` | `ErrCodeTargetAmbiguous` | `ErrTargetAmbiguous` | both `WithSystem` and `WithRoute` were passed |
+| `2608` | `ErrCodeInputInvalid` | `ErrInputInvalid(detail)` | input rejected by the input schema |
+| `2609` | `ErrCodeOutputInvalid` | `ErrOutputInvalid(detail)` | script return rejected by the output schema |
+| `2610` | `ErrCodeUpstreamFailed` | `ErrUpstreamFailed(message)` | failure signaled by the external system |
+| `2611` | `ErrCodeTransportFailed` | `ErrTransportFailed` | wire call never completed |
+| `2612` | `ErrCodeInvocationTimeout` | `ErrInvocationTimeout` | run timeout exceeded |
+| `2613` | `ErrCodeScriptFailed` | `ErrScriptFailed(detail)` | script threw or failed to compile |
+| `2614` | `ErrCodeUnknownAuthScheme` | `ErrUnknownAuthScheme(scheme)` | system references an unregistered auth scheme |
+| `2615` | `ErrCodeInvalidSchema` | `ErrInvalidSchema(detail)` | contract schema rejected at save time |
+| `2616` | `ErrCodeInvalidScript` | `ErrInvalidScript(detail)` | adapter script rejected at save time |
+| `2617` | `ErrCodeInvalidAuthParams` | `ErrInvalidAuthParams(detail)` | auth configuration refused by its scheme |
+| `2618` | `ErrCodeInvalidRouteRef` | `ErrInvalidRouteRef` | route references a missing contract or system |
+| `2619` | `ErrCodeInvalidBaseURL` | `ErrInvalidBaseURL` | system base URL is not an absolute URL |
+| `2620` | `ErrCodeInvalidDataSource` | `ErrInvalidDataSource(detail)` | system data source incomplete or credential unprocessable |
+| `2621` | `ErrCodeInvalidDirection` | `ErrInvalidDirection` | adapter direction outside the known flows |
+| `2622` | `ErrCodeInboundAuthFailed` | `ErrInboundAuthFailed` | inbound delivery failed verification (HTTP 401, deliberately uniform) |
+| `2623` | `ErrCodeInboundHandlerMissing` | `ErrInboundHandlerMissing` | inbound contract has no registered handler (HTTP 501) |
+| `2624` | `ErrCodeInvocationCanceled` | `ErrInvocationCanceled` | caller canceled the invocation |
+| `2625` | `ErrCodeInvalidEnvelope` | `ErrInvalidEnvelope(detail)` | outbound envelope config rejected at save time |
+| `2626` | `ErrCodeInvalidLabel` | `ErrInvalidLabel` | contract label key/value failed validation |
+| `2627` | `ErrCodeMissingCodeMap` | `ErrMissingCodeMap(codeSet)` | codes lookup against a code set with no enabled map |
+| `2628` | `ErrCodeUnmappedValue` | `ErrUnmappedValue(codeSet, value)` | value unmapped under the reject policy |
+| `2629` | `ErrCodeInvalidCodeMap` | `ErrInvalidCodeMap(detail)` | code map definition rejected at save time |
+| `2630` | `ErrCodeCodeSetCatalogFailed` | `ErrCodeSetCatalogFailed(detail)` | host code set catalog could not answer — mapping editor pickers cannot be filled and code map saves cannot confirm their identifiers against it |
 
 ## Next Steps
 

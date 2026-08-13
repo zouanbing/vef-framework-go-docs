@@ -102,14 +102,15 @@ Flags:
 | `--package`, `-p` | `schemas` | 生成 schema 文件的 package 名称 |
 
 目录输入会按输入文件逐一生成 schema 文件。目录模式只处理输入目录直属的
-`*.go` 文件，不会递归子目录。目录输入可以指向一个已存在的输出目录，也可以
-指向一个尚不存在的目录路径。如果输出路径已经作为文件存在，目录到单文件的
-生成会被拒绝。
+`*.go` 文件，不会递归子目录。测试文件（`_test.go`）和被构建约束排除的文件会被
+跳过。目录输入时，输出可以是一个已存在的目录，也可以是一个尚不存在的目录路径
+（会按需创建）。如果输出路径已经作为文件存在，目录到单文件的生成会被拒绝。
 
 生成器会读取目标文件中嵌入 `orm.BaseModel` 的 struct。表元数据来自嵌入的
-`orm.BaseModel` 字段上的 `bun` tag：`table:...` 设置表名，`alias:...` 设置
-默认 alias。缺少这些 tag 部分时，表名默认为 model 名称的复数 snake_case，
-alias 默认为 model 名称的单数 snake_case。
+`orm.BaseModel` 字段上的 `bun` tag：裸名称段（如 `bun:"users"`）或
+`table:...` 选项设置表名（`table:` 优先），`alias:...` 设置默认 alias。
+缺少这些 tag 部分时，表名默认为 model 名称的复数 snake_case，alias 默认为
+model 名称的单数 snake_case。
 
 字段处理遵循这些规则：
 
@@ -117,6 +118,7 @@ alias 默认为 model 名称的单数 snake_case。
 - `bun:"-"` 字段会被跳过
 - `bun:"rel:*"` 和 `bun:"m2m:*"` 关系字段会被跳过
 - 类似 `bun:"user_name"` 这样的第一个 `bun` tag 片段会设置列名
+- 显式的 `column:...` 选项会同时覆盖裸名称段和字段名
 - 没有列名 tag 的字段使用字段名的 snake_case 形式
 - embedded struct 会被展开
 - `bun:"embed:prefix_"` 会用给定的前缀展开嵌套字段

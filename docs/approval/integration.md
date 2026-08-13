@@ -6,12 +6,20 @@ sidebar_position: 5
 
 ## Event Publication
 
-The approval module publishes its domain events through the framework's transactional outbox transport (see [Event Bus](../infrastructure/event-bus.md)). Every approval command writes the event record in the same transaction as the business mutation; the outbox relay then forwards them to the configured sink.
+The approval module publishes its domain events through the framework's transactional outbox transport (see [Event Bus](../infrastructure/event-bus.md)). Every approval command writes the event record in the same transaction as the business mutation; the outbox relay then forwards them to the configured sink. Events produced within a single engine pass are published in occurrence order.
 
 Subscribers must:
 
 1. Attach with `event.WithGroup("...")` because the route resolves to an at-least-once transport.
 2. Rely on the Inbox middleware for dedupe (it activates automatically when `event.middleware.inbox = true` and a transport advertises `AtLeastOnce`).
+
+Events are published in the order they occur within a transaction. The engine emits
+each event at the moment the corresponding state change happens, and the
+outbox relay forwards them in that occurrence order.
+
+Approval commands publish their domain events inside the business transaction
+via `event.WithTx(db)`; the events become visible only if the transaction commits.
+All approval domain events share the `approval.*` topic namespace.
 
 > The standalone `apv_event_outbox` table and module-private `EventOutboxStatus` constants from earlier snapshots have been retired. Approval no longer carries a private outbox — it composes with the framework one.
 
@@ -41,7 +49,8 @@ Task lifecycle:
 
 | Type constant | Topic | Payload / constructor | Payload fields beyond common fields | When |
 | --- | --- | --- | --- | --- |
-| `EventTypeTaskCreated` | `approval.task.created` | `TaskCreatedEvent`, `NewTaskCreatedEvent` | `assignee` (`UserInfo`), `deadline` | a task was created; sequential follow-up tasks may start with `deadline` omitted while waiting |
+| `EventTypeTaskCreated` | `approval.task.created` | `TaskCreatedEvent`, `NewTaskCreatedEvent` | `assignee` (`UserInfo`), `deadline`, `status` | a task was created; sequential follow-up tasks may start with `deadline` omitted while waiting |
+| `EventTypeTaskActivated` | `approval.task.activated` | `TaskActivatedEvent`, `NewTaskActivatedEvent` | `assignee` (`UserInfo`), `deadline`, `reason` (`assigned` / `queue_advanced` / `transferred` / `reassigned`) | a task became actionable (pending); emitted when the task is assigned, promoted from a queue, transferred, or reassigned. Suppressed when the task is cleared within the same engine pass (for example, a consecutive-approver cascade that creates and immediately resolves the task) |
 | `EventTypeTaskApproved` | `approval.task.approved` | `TaskApprovedEvent`, `NewTaskApprovedEvent` | `operator` (`UserInfo`), `opinion` | task approved |
 | `EventTypeTaskHandled` | `approval.task.handled` | `TaskHandledEvent`, `NewTaskHandledEvent` | `operator` (`UserInfo`), `opinion` | handle task completed |
 | `EventTypeTaskRejected` | `approval.task.rejected` | `TaskRejectedEvent`, `NewTaskRejectedEvent` | `operator` (`UserInfo`), `opinion` | task rejected |
@@ -52,7 +61,7 @@ Task lifecycle:
 | `EventTypeAssigneesAdded` | `approval.task.assignees_added` | `AssigneesAddedEvent`, `NewAssigneesAddedEvent` | `addType`, `assignees` (`[]UserInfo`) | dynamic assignees added |
 | `EventTypeAssigneesRemoved` | `approval.task.assignees_removed` | `AssigneesRemovedEvent`, `NewAssigneesRemovedEvent` | `assignees` (`[]UserInfo`) | dynamic assignees removed |
 | `EventTypeTaskDeadlineWarning` | `approval.task.deadline_warning` | `TaskDeadlineWarningEvent`, `NewTaskDeadlineWarningEvent` | `assignee` (`UserInfo`), `deadline`, `hoursLeft` | pre-warning scanner flagged an approaching deadline |
-| `EventTypeTaskUrged` | `approval.task.urged` | `TaskUrgedEvent`, `NewTaskUrgedEvent` | `urger` (`UserInfo`), `target` (`UserInfo`), `message` | applicant urged an assignee |
+| `EventTypeTaskUrged` | `approval.task.urged` | `TaskUrgedEvent`, `NewTaskUrgedEvent` | `urger` (`UserInfo`), `target` (`UserInfo`), `message` | the applicant or a current/former task holder (assignee or delegator) urged an assignee |
 
 CC + Flow:
 
@@ -64,6 +73,11 @@ CC + Flow:
 | `EventTypeFlowDeployed` | `approval.flow.deployed` | `FlowDeployedEvent`, `NewFlowDeployedEvent` | `versionId`, `version` | flow version deployed |
 | `EventTypeFlowToggled` | `approval.flow.toggled` | `FlowToggledEvent`, `NewFlowToggledEvent` | `isActive` | flow active flag changed |
 | `EventTypeFlowPublished` | `approval.flow.published` | `FlowPublishedEvent`, `NewFlowPublishedEvent` | `versionId` | flow version published |
+
+Every instance and task event carries `tenantId` and `occurredTime` from
+`InstanceEventBase`; `occurredTime` is the business time projected onto
+`Envelope.OccurredAt` by `event.WithOccurredAt`. `EventTypeTaskCreated` is the
+catalog constant for the `approval.task.created` topic.
 
 ## Caller Context and Multi-Tenant Safety
 
@@ -121,12 +135,14 @@ Business write-back is a durable desired-state projection, not a per-trigger wri
 | Field | JSON | Meaning |
 | --- | --- | --- |
 | `TableName` | `tableName` | business table receiving approval state |
-| `KeyColumns` | `keyColumns` | record key columns; must exactly match a non-null primary or unique key on the table (verified against the live schema at save time — `ErrBindingSchemaInvalid` / `ErrBindingKeyNotUnique`) |
+| `KeyColumns` | `keyColumns` | record key columns; must exactly match a non-null primary or unique key on the table (verified against the live schema at save time — missing table → `ErrBindingTableMissing`; missing column → `ErrBindingColumnMissing`; both surface as code `40018` / `ErrBindingSchemaInvalid`; non-unique key → `ErrBindingKeyNotUnique`) |
 | `StatusColumn` | `statusColumn` | column receiving the (mapped) instance status |
 | `InstanceIDColumn` | `instanceIdColumn` | **mandatory** — the compare-and-set fence that stops a stale instance from overwriting state owned by a newer approval round |
 | `StartedAtColumn` | `startedAtColumn` | optional; receives the instance start time |
 | `FinishedAtColumn` | `finishedAtColumn` | optional; receives the finish time for final statuses, `NULL` otherwise |
 | `StatusMapping` | `statusMapping` | optional `InstanceStatus` → host status value map; missing entries fall back to the raw status string (`ErrBindingStatusMappingInvalid` rejects unknown statuses and blank values) |
+
+
 
 Convergence works in three steps:
 
@@ -134,9 +150,15 @@ Convergence works in three steps:
 2. **Desired state per transition.** Every instance status transition bumps the projection's `DesiredRevision` and records the full desired state (status, started-at, finished-at). The projection converges on the *latest* desired state — intermediate statuses may be skipped, which is exactly why side effects tied to a specific lifecycle moment belong in `BindCommand` or `SubscribeInstance` instead.
 3. **Apply.** `vef.approval.business_binding.consistency` selects when the business row is written:
    - `synchronous` (default) — inside the approval transaction; a write failure rolls the approval action back.
-   - `eventual` — the approval action commits immediately; a background worker (`scan_interval`, default `10s`; `batch_size`, default `100`) claims due projections with `FOR UPDATE SKIP LOCKED` plus a lease and applies the latest revision, retrying failures with exponential backoff (1s doubling, capped at 1 hour). Each failed attempt publishes `InstanceBindingFailedEvent` as an operator notification — the durable projection row, not the event, drives the retry.
+   - `eventual` — the approval action commits immediately; a background worker (`scan_interval`, default `10s`; `batch_size`, default `100`) claims due projections with `FOR UPDATE SKIP LOCKED` plus a lease and applies the latest revision, retrying failures with exponential backoff (`1s << attemptCount`, i.e. 2s, 4s, …, capped at 1 hour). Each failed attempt publishes `InstanceBindingFailedEvent` as an operator notification — the durable projection row, not the event, drives the retry.
 
-The applied `UPDATE` sets the configured columns `WHERE <key columns match> [AND <instanceIdColumn> = <applied owner>]`, translating the status through `StatusMapping`. Operators inspect and force convergence through the admin operations `find_business_projections` / `retry_business_projection` (see [RPC Resources](./resources.md#approvaladmin)), and `get_metrics` reports `businessProjectionCounts` and `pendingBusinessProjections`.
+The applied `UPDATE` sets the configured columns `WHERE <key columns match> [AND <instanceIdColumn> = <applied owner>]`, translating the status through `StatusMapping`. Operators inspect and force convergence through the admin operations `find_business_projections` / `retry_business_projection` (see [RPC Resources](./resources.md#approvaladmin) — each projection row identifies its physical target via `BusinessTable` and `recordKey`), and `get_metrics` reports `businessProjectionCounts` and `pendingBusinessProjections`.
+
+The projection status enum is `BindingProjectionStatus`. Its values are
+`BindingProjectionPending` (a new desired state is recorded), `BindingProjectionProcessing`
+(the worker has claimed the projection and is applying it), `BindingProjectionApplied`
+(the latest desired state has been written), and `BindingProjectionFailed` (the last
+write attempt failed and will be retried).
 
 The engine owns this projection; it is configuration-driven and not replaced by an extension hook. Hosts add behavior around it with lifecycle hooks, event subscriptions, and command bridges.
 
@@ -224,8 +246,8 @@ type Delegation struct {
     DelegateeID    string         // Who receives delegation
     FlowCategoryID *string        // Optional: limit to category
     FlowID         *string        // Optional: limit to specific flow
-    StartTime      timex.DateTime // Delegation start
-    EndTime        timex.DateTime // Delegation end
+    StartsAt       timex.DateTime // Delegation window start
+    EndsAt         timex.DateTime // Delegation window end
     IsActive       bool
     Reason         *string        // Optional: why the delegation exists
 }
@@ -238,7 +260,7 @@ type Delegation struct {
 | caller safety | `CallerContext`, `SystemCaller`, `IsSuperAdmin`, `SuperAdminRole`, `ErrCrossTenantAccess` |
 | form data | `FormData`, `NewFormData`, `FormSchemaParser`, `FormFieldDefinition`, `FormSnapshot`, `ValidationRule`, `StorageMode`, `StorageJSON`, `StorageTable`, `FieldKind`, `FieldInput`, `FieldNumber`, `FieldDate`, `FieldTextarea`, `FieldSelect`, `FieldUpload`, `FieldTable`, `FieldOption`, `ColumnDataType`, `ColumnString`, `ColumnText`, `ColumnInteger`, `ColumnDecimal`, `ColumnBoolean`, `ColumnDate`, `ColumnDatetime`, `ColumnJSON` |
 | table storage | `FormTable`, `FormTableColumn` (`FormTable.SourceFieldKey` is `""` for the main table, or the owning table field's key for a detail-table child projection) |
-| flow models | `FlowCategory`, `Flow`, `FlowVersion`, `FlowNode`, `FlowEdge`, `FlowInitiator`, `FlowNodeAssignee`, `FlowNodeCC`, `VersionStatus`, `VersionDraft`, `VersionPublished`, `VersionArchived`, `ActionLog`, `OperatorInfo`, `UrgeRecord`, `DefaultTenantID` |
+| flow models | `FlowCategory`, `Flow`, `FlowVersion`, `FlowNode`, `FlowEdge`, `FlowInitiator`, `FlowNodeAssignee`, `FlowNodeCC`, `VersionStatus`, `VersionDraft`, `VersionPublished`, `VersionArchived`, `ActionLog`, `UrgeRecord`, `DefaultTenantID` |
 | node design | `FlowDefinition`, `NodeDefinition`, `EdgeDefinition`, `Position`, `NodeData`, `BaseNodeData`, `StartNodeData`, `ApprovalNodeData`, `HandleNodeData`, `ConditionNodeData`, `CCNodeData`, `EndNodeData`, `ErrUnknownNodeKind`, `ErrNodeDataUnmarshal` |
 | conditions | `ConditionKind`, `ConditionField`, `ConditionExpression`, `Condition`, `ConditionGroup`, `ConditionBranch`, `EvaluationContext`, `ConditionEvaluator`, `InstanceGlobalsResolver`, `AggregateKind`, `AggregateSum`, `AggregateCount`, `AggregateAvg`, `Aggregator` |
 | initiators and assignees | `InitiatorKind`, `InitiatorUser`, `InitiatorRole`, `InitiatorDepartment`, `AssigneeKind`, `AssigneeDefinition`, `AssigneeService`, `ResolvedAssignee`, `UserInfo`, `UserInfoResolver`, `RoleMembershipChecker`, `AddAssigneeType`, `AddAssigneeBefore`, `AddAssigneeAfter`, `AddAssigneeParallel` |
@@ -250,7 +272,7 @@ type Delegation struct {
 | action and status enums | `ActionType`, `InstanceStatus`, `TaskStatus`, `NodeKind`, `StorageMode`, `VersionStatus` |
 | pass rules | `PassRule`, `PassRuleContext`, `PassRuleStrategy`, `PassRuleResult`, `PassRulePending`, `PassRulePassed`, `PassRuleRejected` |
 | progress views | `TimelineEntryKind`, `TimelineEntry`, `NodeVisitStatus`, `NodeProgressStatus`, `InstanceFlowGraph`, `FlowGraphNode`, `FlowGraphNodeData`, `FlowGraphEdge`, `NodeParticipant`, `Activity`, `ActivityUrge`, `CCRecipient` |
-| events | all `New...Event` constructors, `DomainEvent`, `InstanceEventBase`, `TaskEventBase`, `FlowEventBase`, `NewInstanceEventBase`, `NewTaskEventBase`, `NewFlowEventBase`, `PayloadOccurredAt`, `AllEventTypes`, and the `EventType...` constants |
+| events | all `New...Event` constructors, `DomainEvent`, `InstanceEventBase`, `TaskEventBase`, `FlowEventBase`, `NewInstanceEventBase`, `NewTaskEventBase`, `NewFlowEventBase`, `PayloadOccurredAt`, `AllEventTypes`, `TaskActivationReason`, `TaskActivationAssigned`, `TaskActivationQueueAdvanced`, `TaskActivationTransferred`, `TaskActivationReassigned`, and the `EventType...` constants |
 | extension interfaces | `InstanceLifecycleHook`, `BusinessRefProvider`, `BusinessRefResolver`, `InstanceNoGenerator`, `ConditionEvaluator`, `InstanceGlobalsResolver`, `PrincipalTenantResolver`, `PrincipalDepartmentResolver`, `RoleMembershipChecker` |
 | DI helpers (package `vef`) | `SupplyBusinessRefProvider`, `SupplyBusinessRefResolver`, `ProvideApprovalLifecycleHook`, `ProvideApprovalAggregator`, `ProvideApprovalFormSchemaParser` |
 | admin DTOs | package `approval/admin`: `Instance`, `InstanceDetail`, `InstanceDetailInfo`, `Task`, `ActionLog`, `Metrics`, `BusinessProjection` |

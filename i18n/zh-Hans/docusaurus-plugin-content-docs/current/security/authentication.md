@@ -22,7 +22,7 @@ VEF 的认证发生在 API 操作层。每个操作都有自己的 auth 配置�
 - `api.Public()`
 - `api.BearerAuth()`
 - `api.SignatureAuth()`
-- `api.IPAuth(...)`（白名单解析方式见下文的 [Signature helpers](./authentication-reference#signature-helpers)）
+- `api.IPAuth(...)`（白名单解析方式见下文的 [Signature helpers](./authentication-reference#signature-helpers)）；空规则无效时允许全部 IP，有效规则全部异常时拒绝全部请求
 - `api.APIKeyAuth(...)`
 - `api.HTTPBasicAuth()`
 
@@ -122,19 +122,32 @@ type BasicAccountLoader interface {
 ## 保留身份
 
 某些身份用于归因框架在请求之外执行的工作——它们是审计作者，绝不是调用方。
-`security.Principal.IsReserved()` 报告它们：`system` 主体类型，以及
-`orm.OperatorSystem` / `orm.OperatorCronJob` 操作者 ID。
+`security.Principal.IsReserved()` 报告以下情况：
+
+- `system` 主体类型（`PrincipalTypeSystem`）；
+- 主体 `ID` 等于 `orm.OperatorSystem`（`"system"`）时；
+- 主体 `ID` 等于 `orm.OperatorCronJob`（`"cron_job"`）时。
+
+`PrincipalAnonymous` 故意**不**属于保留身份：它表示身份缺失，只有 `public`
+认证策略才会合法地产出。
 
 框架在每个边界 fail-closed 地强制该不变量：
 
-- 解析出 nil 或保留主体的认证器（包括自定义 `security.Authenticator`
-  实现与挑战提供者）在认证边界即被拒绝；
-- 令牌签发与挑战流程拒绝为保留身份签发令牌
-  （`security_reserved_principal_forbidden`，HTTP 401）。
+- **认证边界**：API 认证中间件拒绝任何返回 nil 或保留主体的策略，返回
+  `security.ErrReservedPrincipal`（业务码 `1007`，HTTP 401）。
+- **令牌签发**：`JWTTokenGenerator` 和 `OpaqueTokenGenerator` 均拒绝为保留主体
+  签发令牌。
+- **挑战流程**：挑战令牌解析会把保留主体类型和保留 ID 视为
+  `ErrTokenInvalid`；挑战提供者解析后，`resolve_challenge` 再拒绝保留结果，
+  返回 `ErrReservedPrincipal`。挑战令牌的 subject 只保存 principal ID，不包含用户名、部门等额外信息。
 
-内置密码登录还额外拒绝以 `anonymous` 作为登录标识（它表示"身份缺失"，
-只有 public 策略可以合法产出）。自定义 `UserLoader`、`APIKeyLoader` 等
-实现绝不能返回 ID 与保留操作者 ID 冲突的主体。
+内置密码登录还会额外拒绝以保留标识符（`system`、`cron_job`、`anonymous`）
+作为登录 `principal`。自定义 `UserLoader`、`APIKeyLoader` 等身份源绝不能返回
+ID 与保留操作者 ID 冲突的主体。
+
+保留身份的拒绝会**记录审计事件，但不计入登录锁定计数**：凭据本身可能是对的，
+错误在于认证器或挑战提供者，而非调用方。锁定行为参见
+[登录加固](./login-hardening)。
 
 ## 公开操作
 
@@ -191,8 +204,7 @@ security/auth
 已配置机制的认证器会被注册，且 `login` 拒绝框架签发的令牌类型作为登录
 凭据（见[会话管理](./session-management)）。
 
-`logout` 总是返回 ok 结果。在 `jwt_token` 下它实际上是 no-op——服务端没有
-可吊销的会话，客户端需要自行删除已保存的 token。在 `opaque_token` 下它会
+`logout` 会立即返回 ok 结果。在 `jwt_token` 下它实际上是 no-op——不会在服务端吊销或拉黑 token，客户端需要自行删除已保存的 token。在 `opaque_token` 下它会
 吊销当前 bearer token 背后的会话，尽力而为（会话不存在或存储出错只记录
 日志）。
 

@@ -107,13 +107,13 @@ closed）。
 | `delegateeId` | `string` | 是 | 接收委托任务的用户 |
 | `flowCategoryId` | `string` | 否 | 将委托限定到某个流程分类；`null` 覆盖全部分类 |
 | `flowId` | `string` | 否 | 将委托限定到某个流程；`null` 覆盖全部流程 |
-| `startTime` | `DateTime` | 是 | 委托生效开始时间 |
-| `endTime` | `DateTime` | 是 | 委托生效结束时间 |
+| `startsAt` | `DateTime` | 是 | 委托生效开始时间 |
+| `endsAt` | `DateTime` | 是 | 委托生效结束时间 |
 | `isActive` | `bool` | 否 | 停用的委托在办理人解析中被忽略 |
 | `reason` | `string` | 否 | 委托原因，展示在被委托的任务上 |
 
 `Delegation`（响应模型）：业务字段与入参一致 —— `delegatorId`、
-`delegateeId`、`flowCategoryId`、`flowId`、`startTime`、`endTime`、
+`delegateeId`、`flowCategoryId`、`flowId`、`startsAt`、`endsAt`、
 `isActive`、`reason` —— 外加审计列。经委托产生的任务会把委托人作为独立的
 人员快照携带（见下文 `NodeParticipant.delegator`）。
 
@@ -247,6 +247,7 @@ closed）。
 | `keyword` | `string` | 否 | 对流程名称做 contains 匹配 |
 | `isActive` | `bool` | 否 | 按启用状态过滤 |
 | `labels` | `object`（string→string） | 否 | label 相等过滤 —— 提交的每一对都必须匹配 |
+| `bindingMode` | `string` | 否 | `standalone` 或 `business`；按绑定模式过滤 |
 | `page` | `int` | 否 | 页码（从 1 开始） |
 | `pageSize` | `int` | 否 | 每页大小 |
 
@@ -326,7 +327,7 @@ closed）。
 | `tenantId` | `string` | 是 | 发起所在租户；空值回退为 `"default"`，且调用者必须对流程的租户有权限 |
 | `flowCode` | `string` | 是 | 要发起流程的业务编码；解析最新已发布版本（`ErrFlowNotFound` / `ErrFlowNotActive` / `ErrNoPublishedVersion`） |
 | `businessRef` | `string`（≤ 512） | business 模式 | 绑定业务行的不透明引用；业务绑定流程必填，除非注册的 `BusinessRefProvider` 提供（`ErrBusinessRefRequired`）。默认形状：单键直接取值、复合键为 JSON 对象 |
-| `formData` | `object` | 否 | 按字段 key 组织的表单值；按已发布版本的派生字段清单校验（`40401` 系列），超过 64 KiB 拒绝，并剥除申请人无权编辑的字段 |
+| `formData` | `object` | 否 | 按字段 key 组织的表单值；按已发布版本的派生字段清单校验（`40401` 系列），超过 64 KiB 拒绝；未知 key 会被拒绝（`approval_form_field_not_defined`） |
 
 申请人身份与条件路由的全局变量在服务端从已认证 principal 解析
 （`PrincipalDepartmentResolver`、`InstanceGlobalsResolver`）—— 绝不接受请求体
@@ -362,7 +363,7 @@ closed）。
 | `transferToId` | `string` | `transfer` | 转办目标用户；必须非空且不同于操作者（`ErrInvalidTransferTarget`）；仅节点开启 `isTransferAllowed` 时允许（`ErrTransferNotAllowed`） |
 | `targetNodeId` | `string` | `rollback` | 回退目标节点；必须是节点 `rollbackType` 与实例访问轨迹允许的目标之一（`ErrInvalidRollbackTarget`、`ErrRollbackNotAllowed`）。合法目标由 `my.get_instance_detail` → `myTask.rollbackTargets` 提供 |
 
-`WithdrawParams`（`withdraw` —— 申请人撤回运行中的实例）：
+`WithdrawParams`（`withdraw` —— 申请人撤回运行中的实例，或放弃被退回的实例）：
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -374,14 +375,14 @@ closed）。
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `instanceId` | `string` | 是 | 要重新提交的实例（`returned` / `withdrawn` 之外报 `ErrResubmitNotAllowed`） |
-| `formData` | `object` | 否 | 替换的表单数据；校验同 `start` |
+| `formData` | `object` | 否 | 表单更新，与实例现有 form data 合并后校验；合并后的负载校验同 `start` |
 
 `AddCCParams` / `MarkCCReadParams`（`add_cc`、`mark_cc_read`）：
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `instanceId` | `string` | 是 | 目标实例 |
-| `ccUserIds` | `string[]`（1–50） | 仅 `add_cc` | 要抄送的用户；仅当前节点开启 `isManualCcAllowed` 时允许（`ErrManualCcNotAllowed`） |
+| `ccUserIds` | `string[]`（1–50） | 仅 `add_cc` | 要抄送的用户；实例必须正在某个节点上运行（`ErrInstanceCompleted`），调用者必须是当前节点的办理人（`ErrNotAssignee`）；仅当前节点开启 `isManualCcAllowed` 时允许（`ErrManualCcNotAllowed`） |
 
 `mark_cc_read` 会把调用者在该实例上的所有未读抄送记录标记已读 ——
 自助已读回执，因此不做审计。
@@ -409,6 +410,7 @@ closed）。
 
 催办遵守节点按任务粒度的 `urgeCooldownMinutes`（过于频繁时报 `40601`；
 非正配置默认为 30 分钟），此外该操作还有调用者每分钟 10 次的限流。
+申请人和任何曾在该实例上持有任务的人（办理人或委托人）都可以对任意待办任务发起催办；仅抄送查看者不能催办。
 
 ## `approval/my`
 
@@ -448,7 +450,7 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | | `isRead` | `bool` | 否 | 已读状态过滤 |
 | | `page` / `pageSize` | `int` | 否 | 分页 |
 | `get_pending_counts` | `tenantId` | `string` | 否 | 租户过滤 |
-| `get_instance_detail` | `instanceId` | `string` | 是 | 要加载的实例；调用者必须是参与者 —— 申请人、（曾经的）办理人或抄送对象（`ErrAccessDenied`） |
+| `get_instance_detail` | `instanceId` | `string` | 是 | 要加载的实例；调用者必须是参与者 —— 申请人、（曾经的）办理人、委托人或抄送对象（`ErrAccessDenied`） |
 
 响应 DTO（`approval/my` 包）：
 
@@ -482,6 +484,7 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | `instanceId` / `instanceNo` / `title` | `string` | 实例标识 |
 | `flowName` | `string` | 流程显示名称 |
 | `flowIcon` | `string` \| 缺省 | 流程图标 |
+| `labels` | `object` \| 缺省 | 流程的宿主自有选择元数据 |
 | `status` | `string` | 实例状态 |
 | `currentNodeName` | `string` \| 缺省 | 当前进行中节点的名称 |
 | `createdAt` | `DateTime` | 提交时间 |
@@ -493,16 +496,18 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | --- | --- | --- |
 | `taskId` | `string` | 提交 `process_task` 时使用的任务 id |
 | `instanceId` / `instanceTitle` / `instanceNo` | `string` | 所属实例标识 |
-| `flowName` / `flowIcon` | `string` | 流程显示标识 |
+| `flowName` | `string` | 流程显示标识 |
+| `flowIcon` | `string` \| 缺省 | 流程图标 |
 | `applicant` | `UserInfo` | 申请人快照 |
 | `nodeName` | `string` | 任务所属节点 |
 | `createdAt` | `DateTime` | 任务创建时间 |
 | `deadline` | `DateTime` \| 缺省 | 节点配置了超时时的截止时间 |
 | `isTimeout` | `bool` | 是否已超期 |
 
-`CompletedTask` —— 一条调用者已处理的任务：标识字段与 `PendingTask` 相同，
-另有 `status`（处理结果 —— `approved`、`rejected`、`handled`、
-`transferred`、`rolled_back` 等）与 `finishedAt`；没有 `deadline` /
+`CompletedTask` —— 一条调用者已处理的任务：标识字段与 `PendingTask` 相同（无
+`createdAt`），另有 `status`（处理结果——恰好 `approved`、`rejected`、
+`handled`、`transferred`、`rolled_back`）、`instanceStatus`（实例当前状态）、
+`labels`（流程的宿主自有选择元数据）与 `finishedAt`；没有 `deadline` /
 `isTimeout`。
 
 `CCRecord` —— 一条发给调用者的抄送通知：
@@ -511,7 +516,8 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | --- | --- | --- |
 | `ccRecordId` | `string` | 抄送记录 id |
 | `instanceId` / `instanceTitle` / `instanceNo` | `string` | 所属实例标识 |
-| `flowName` / `flowIcon` | `string` | 流程显示标识 |
+| `flowName` | `string` | 流程显示标识 |
+| `flowIcon` | `string` \| 缺省 | 流程图标 |
 | `applicant` | `UserInfo` | 申请人快照 |
 | `nodeName` | `string` \| 缺省 | 产生抄送的节点；实例级抄送时缺省 |
 | `isRead` | `bool` | 已读回执状态 |
@@ -537,7 +543,7 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `instanceId` / `instanceNo` / `title` | `string` | 实例标识 |
-| `flowName` / `flowIcon` | `string` | 流程显示标识，查询时从可变流程行读取 |
+| `flowId` / `flowCode` / `flowName` / `flowIcon` | `string` | 流程显示标识，查询时从可变流程行读取 |
 | `labels` | `object` \| 缺省 | 流程的宿主自有选择元数据 —— 与 `flowName` 一样属于显示标识，不是版本锁定的快照 |
 | `applicant` | `UserInfo` | 申请人快照 |
 | `status` | `string` | 实例状态 |
@@ -559,11 +565,27 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | `rollbackTargets` | `{nodeId, name}[]` | 合法回退目标，按节点回退配置与实例访问轨迹解析，与回退命令的校验完全一致；不允许回退时为空 |
 | `removableAssignees` | `{taskId, assignee, status}[]` | 查看者可减签的同组任务（`status` 为 `pending` / `waiting`），与减签命令的授权完全一致：本轮访问中仍可办理、排除查看者本人的同组任务；节点不允许减签时为空 |
 
+`RollbackTarget` —— 一个合法的回退目标：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `nodeId` | `string` | 目标节点 id |
+| `name` | `string` | 节点显示名称 |
+
+`RemovableAssignee` —— 一个可减签的同组任务：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `taskId` | `string` | 同组任务 id |
+| `assignee` | `UserInfo` | 办理人快照 |
+| `status` | `string` | 任务状态（`pending` / `waiting`） |
+
 `availableActions` 是查询层的 UI 提示。对申请人：实例可转入 `withdrawn`
 时包含 `withdraw`，实例处于退回或已撤回状态时包含 `resubmit`。对待办任务：
 办理节点为 `handle`，否则为 `approve`，然后是 `reject`，再加上当前节点允许
-时的 `transfer`、`rollback`、`add_assignee`、`add_cc`。实例存在任何待办任务
-时还会包含 `urge`。命令处理器仍会做自己的校验。
+时的 `transfer`、`rollback`、`add_assignee`、`remove_assignee`、`add_cc`。
+实例存在任何待办任务
+时还会包含 `urge`；申请人和任何曾在该实例上持有任务的人（办理人或委托人）都可以催办；仅抄送查看者不能。命令处理器仍会做自己的校验。
 
 ## `approval/admin`
 
@@ -606,7 +628,7 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | `find_business_projections` | `tenantId` | `string` | 否 | 租户过滤 |
 | | `status` | `string` | 否 | 投影状态过滤：`pending`、`processing`、`applied`、`failed` |
 | | `page` / `pageSize` | `int` | 否 | 分页 |
-| `terminate_instance` | `instanceId` | `string` | 是 | 要强制终止的运行中实例（非运行状态报 `ErrTerminateNotAllowed`） |
+| `terminate_instance` | `instanceId` | `string` | 是 | 要强制终止的非终态实例（running / returned / withdrawn；已处于终态时报 `ErrTerminateNotAllowed`） |
 | | `reason` | `string`（≤ 2000） | 否 | 终止原因，记入 action log |
 | `reassign_task` | `taskId` | `string` | 是 | 要改派的待办任务 |
 | | `newAssigneeId` | `string` | 是 | 替换的办理人（无效时报 `ErrInvalidTransferTarget`） |
@@ -645,8 +667,24 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 维度的字段（`availableActions` / `fieldPermissions` / `myTask`）：`instance`
 （`InstanceDetailInfo`）、`formSchema`（原样宿主文档）、`timeline`
 （`TimelineEntry[]`）与 `flowGraph`（`InstanceFlowGraph`）。
-`InstanceDetailInfo` 与 `my.InstanceInfo` 一致，另加 `tenantId`、`flowId`
-与 `flowVersionId`，且其 `formData` 不做过滤。
+`InstanceDetailInfo` 与 `my.InstanceInfo` 一致，另加 `tenantId` 与
+`flowVersionId`，且没有 `flowIcon`；其 `formData` 不做过滤。
+
+`InstanceDetailInfo` —— 管理端实例详情载荷：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `instanceId` / `instanceNo` / `title` | `string` | 实例标识 |
+| `tenantId` | `string` | 所属租户 |
+| `flowId` / `flowCode` / `flowName` | `string` | 流程标识 |
+| `flowVersionId` | `string` | 实例运行所依据的版本快照 |
+| `labels` | `object` \| 缺省 | 流程的宿主自有选择元数据 |
+| `applicant` | `UserInfo` | 申请人快照 |
+| `status` | `string` | 实例状态 |
+| `currentNodeId` / `currentNodeName` | `string` \| 缺省 | 当前进行中的节点 |
+| `businessRef` | `string` \| 缺省 | 不透明业务引用（业务绑定流程） |
+| `formData` | `object` \| 缺省 | 当前表单数据（不做过滤 —— 管理端视图） |
+| `createdAt` / `finishedAt` | `DateTime` | 生命周期时间戳 |
 
 `ActionLog` —— 一条审计记录。人员引用统一为动作发生时捕获的 `UserInfo`
 快照：
@@ -692,9 +730,10 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | `appliedOwnerInstanceId` | `string` \| 缺省 | 状态最近一次成功写入业务行的实例 |
 | `businessTable` | `string` | 目标业务表 |
 | `recordKey` | JSON 对象 | 定位绑定行的键列取值 |
-| `consistency` | `string` | 配置的绑定一致性模式（`transactional` / `eventual`） |
+| `consistency` | `string` | 配置的绑定一致性模式（`synchronous` / `eventual`） |
 | `desiredStatus` | `string` | 等待回写的实例状态 |
-| `desiredStartedAt` / `desiredFinishedAt` | `DateTime` | 等待回写的生命周期时间戳 |
+| `desiredStartedAt` | `DateTime` | 等待回写的生命周期时间戳 |
+| `desiredFinishedAt` | `DateTime` \| 缺省 | 等待回写的生命周期时间戳 |
 | `desiredRevision` / `appliedRevision` | `int` | 单调修订号；两者相等即已收敛 |
 | `status` | `string` | 收敛状态：`pending`、`processing`、`applied`、`failed` |
 | `attemptCount` | `int` | 已尝试写入次数 |
@@ -723,7 +762,7 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `kind` | `string` | 节点访问为 `start`、`approval`、`handle`、`cc`；实例级里程碑为 `withdraw`、`terminate`。结构性节点（`condition` / `end`）从不出现 |
+| `kind` | `string` | 节点访问为 `start`、`approval`、`handle`、`cc`、`end`；实例级里程碑为 `withdraw`、`terminate`。结构性节点 `condition` 从不出现；`end` visit 保留为时间线收尾标记 |
 | `nodeId` | `string` \| 缺省 | 被访问的节点；里程碑条目缺省 |
 | `name` | `string` | 节点显示名称（或里程碑动作名） |
 | `status` | `string` | 节点访问状态：`active`、`passed`、`rejected`、`returned`、`canceled` |
@@ -810,6 +849,9 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | `40018` | `ErrCodeBindingSchemaInvalid` | `ErrBindingSchemaInvalid` | `approval_binding_schema_invalid` | 配置的绑定表或列在主库中不存在 |
 | `40019` | `ErrCodeBindingKeyNotUnique` | `ErrBindingKeyNotUnique` | `approval_binding_key_not_unique` | 键列没有对应一个完整的非空主键或唯一键 |
 | `40020` | `ErrCodeBindingStatusMappingInvalid` | `ErrBindingStatusMappingInvalid` | `approval_binding_status_mapping_invalid` | 状态映射包含未知状态或映射为空值 |
+| `40021` | `ErrCodeInvalidFlowLabel` | `ErrInvalidFlowLabel` | `approval_invalid_flow_label` | 流程 label 键会无声破坏 JSON 或宿主工具 |
+| `40022` | `ErrCodeInitiatorsNotAllowed` | `ErrInitiatorsNotAllowed` | `approval_initiators_not_allowed` | `isAllInitiationAllowed=true` 与 `initiators` 不能同时存在 |
+| `40023` | `ErrCodeInitiatorsRequired` | `ErrInitiatorsRequired` | `approval_initiators_required` | 受限发起必须至少有一条 `ids` 非空的发起人规则 |
 | `40101` | `ErrCodeInstanceNotFound` | `ErrInstanceNotFound` | `approval_instance_not_found` | 实例查找失败 |
 | `40102` | `ErrCodeInstanceCompleted` | `ErrInstanceCompleted` | `approval_instance_completed` | 实例已经完结 |
 | `40103` | `ErrCodeNotAllowedInitiate` | `ErrNotAllowedInitiate` | `approval_not_allowed_initiate` | 调用者不能发起该流程 |
@@ -845,10 +887,9 @@ principal 都可调用；每个查询都在服务端锚定到调用者身份。
 | `40701` | `ErrCodeAccessDenied` | `ErrAccessDenied` | `approval_access_denied` | 调用者缺少审批域访问权 |
 | `40702` | `ErrCodeTerminateNotAllowed` | `ErrTerminateNotAllowed` | `approval_terminate_not_allowed` | 当前实例状态不允许终止 |
 
-`ErrEventRouteNotTransactional`、`ErrEventRouteNotSubscribable`、
-`ErrTenantNotResolved` 等启动与租户解析诊断错误位于
-`internal/approval/...` 下；它们不是可导入的公开 Go API，但事件路由或租户
-principal 配置有误时，运维人员可能在包装后的报错信息里看到它们。
+`ErrEventRouteNotTransactional` 和 `ErrTenantNotResolved` 等启动与租户解析
+诊断错误位于 `internal/approval/...` 下；它们不是可导入的公开 Go API，但事件
+路由或租户 principal 配置有误时，运维人员可能在包装后的报错信息里看到它们。
 
 ---
 

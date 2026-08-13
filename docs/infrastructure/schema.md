@@ -18,6 +18,7 @@ The schema module provides:
 | Output | Meaning |
 | --- | --- |
 | `schema.Service` | schema inspection service |
+| `schema.Table` | basic table metadata (name, schema, comment) |
 | `sys/schema` | built-in RPC resource |
 
 ## `schema.Service` Interface
@@ -38,7 +39,7 @@ The schema module registers the `sys/schema` RPC resource, mounted under
 permission token: every action inherits the API engine's default Bearer
 authentication.
 
-Every action sets a custom per-operation rate limit of `max 60`. The window
+Every action sets a custom per-operation rate limit of `Max = 60`. The window
 length is not overridden, so it inherits `vef.api.rate_limit.period`
 (default `5m`); the limiter counts per operation + client IP + principal,
 in process memory on each node.

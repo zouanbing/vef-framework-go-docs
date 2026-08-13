@@ -82,6 +82,7 @@ timeout_scan_interval     = "1m"
 pre_warning_scan_interval = "5m"
 cleanup_scan_interval     = "24h"
 delegation_max_depth      = 10
+form_data_max_bytes       = 65536    # 默认 64 KiB
 form_snapshot_retention   = "2160h"  # 90 天
 urge_record_retention     = "720h"   # 30 天
 cc_record_retention       = "2160h"  # 90 天
@@ -94,7 +95,10 @@ batch_size    = 100            # 每次扫描处理的投影数
 
 `auto_migrate` 是普通 boolean 开关，不会由 `ApprovalConfig.ApplyDefaults()`
 自动设为 true；需要启动时执行 approval DDL 时必须显式开启。
-`cc_record_retention` 只清理已经读过的 CC 记录。
+`form_data_max_bytes` 限制申请人或审批人可提交的 JSON 编码表单负载上限
+（默认 `65536`，即 64 KiB；`config.DefaultFormDataMaxBytes`）；包含大量明细表格的
+流程可以调高该值。负值会导致配置校验失败
+（`config.ErrInvalidApprovalFormDataMaxBytes`）。`cc_record_retention` 只清理已经读过的 CC 记录。
 
 `business_binding` 控制审批状态如何投影到绑定的业务表：
 `synchronous`（默认）在审批事务内写业务行，`eventual` 先提交期望状态、由
@@ -103,6 +107,10 @@ batch_size    = 100            # 每次扫描处理的投影数
 worker 配置为负值会在启动时的配置校验直接失败
 （`config.ErrInvalidApprovalBindingConsistency` /
 `ErrInvalidApprovalBusinessBindingWorkerConfig`）。
+
+每次启动时，审批模块的迁移逻辑会校验每个必需的表是否存在，且都带有 `id`
+主键。缺表或主键缺失 / 错误都会导致应用启动失败（`ErrSchemaOutdated`），
+以便运维人员在运行时之前发现 schema 漂移。
 
 > outbox 调优项（`relay_interval` / `max_retries` / `batch_size`）归属 `[vef.event.transports.outbox]`，而不是 `[vef.approval]`——审批模块通过全框架统一的 outbox transport 发布事件，参考 [事件总线](../infrastructure/event-bus.md)。
 

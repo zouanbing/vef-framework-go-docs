@@ -37,8 +37,22 @@ sidebar_position: 4
   从不输出。
 - 值端到端保留 JSON 类型（字符串、数字、布尔）；查找按归一化字符串比较，
   因此 `1` 与 `"1"` 指向同一条目。
-- 保存时校验拒绝任一侧（主值与别名合并后）的重复查找值
-  （`ErrInvalidCodeMap`），保证每次查找是确定的。
+- 保存时校验拒绝任一侧（主值与别名合并后）的重复查找值、未知的未映射策略、
+  不符合 `^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`（至多 128 字符）的
+  `codeSet`，以及与策略不一致的兜底值——`fallback` 策略要求同时提供
+  `fallbackCanonical` 与 `fallbackExternal`，其他策略禁止携带
+  （`ErrInvalidCodeMap`）。每次查找保持确定。
+
+### 未映射策略
+
+`UnmappedPolicy` 声明码值映射对无条目匹配的查找如何应答。
+
+| 符号 | 值 | 含义 |
+| --- | --- | --- |
+| `UnmappedPolicy` | `string` | 声明码值映射对无条目匹配的查找如何应答的类型 |
+| `UnmappedPolicyReject` | `reject` | 查找失败并返回 `ErrUnmappedValue`；空策略默认为此 |
+| `UnmappedPolicyPassthrough` | `passthrough` | 原样返回输入值 |
+| `UnmappedPolicyFallback` | `fallback` | 返回映射为当前查找目标侧配置的兜底值 |
 
 ## `codes` 脚本库
 

@@ -51,7 +51,7 @@ security、event bus、CRUD、approval 等）都依赖 `logx.Logger`，从不直
 ## 默认实现
 
 开箱即用的 `logx.Logger` 由 `zap.SugaredLogger`（`go.uber.org/zap`）支撑，
-在 `internal/logx` 内部构造：
+在框架内部日志实现中构造：
 
 | 方面 | 行为 |
 | --- | --- |
@@ -115,7 +115,7 @@ request ID 作为 logger 的 *namespace* 携带——日志行显示
 
 ## 替换或包装 Logger
 
-具体实现**不可替换**。root zap logger 是 `internal/logx` 里的
+具体实现**不可替换**。root zap logger 是进程启动时构造一次的
 package-level 值，框架各 package 在包初始化时就捕获了各自的 named child，
 而且 `logx.Logger` 不是 DI 提供的类型——因此没有 `fx.Decorate` 切入点，也
 没有导出的替换钩子。框架内部的输出（库、格式、目标）是固定的。

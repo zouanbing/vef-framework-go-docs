@@ -126,7 +126,8 @@ sql.execute('UPDATE ...', args)                            // → { rowsAffected
 ```
 
 - `jssql.New(db, kind, opts...)` builds the library over a chosen data
-  source; the caller decides what scripts can reach.
+  source; the caller decides what scripts can reach. Options are of type
+  `jssql.Option` (e.g. `jssql.WithExecute()`, `jssql.WithMaxRows(n)`).
 - Only placeholder binding — deliberately no string interpolation helper.
 - Read-only by default, enforced fail-closed by an AST-based guard
   (`sqlguard`): writing CTEs, stacked statements, and dialect-specific
@@ -134,8 +135,9 @@ sql.execute('UPDATE ...', args)                            // → { rowsAffected
   (`ErrQueryNotReadOnly`).
 - `sql.execute` throws `ErrExecuteDisabled` unless built with
   `jssql.WithExecute()`.
-- Result sets are capped (`jssql.WithMaxRows`, default 1000;
-  `ErrTooManyRows` instructs the script to add `LIMIT`).
+- Result sets are capped (`jssql.WithMaxRows`, default
+  `jssql.DefaultMaxRows` = 1000; `ErrTooManyRows` instructs the script to add
+  `LIMIT`).
 
 ### `jshttp` — global `http`
 
@@ -156,7 +158,17 @@ http.delete(url, options?)
   replaces AbortSignal, `redirect` supports `follow` / `error` / `manual`.
 - By default nothing is restricted — timeouts, body size caps, host
   allowlists, and the private-network guard all activate through options
-  (`jshttp.New(opts...)`).
+  (`jshttp.New(opts...)`), whose type is `jshttp.Option`:
+  `jshttp.WithClient(client)` supplies a custom `http.Client`;
+  `jshttp.WithTimeout(d)` caps every request;
+  `jshttp.WithMaxBodySize(n)` limits the response body in bytes;
+  `jshttp.WithAllowedHosts(hosts...)` restricts targets to the given hostnames;
+  `jshttp.WithPublicNetworkOnly()` blocks loopback, private, link-local, multicast, and unspecified addresses.
+- Errors: `jshttp.ErrInvalidRequest` (malformed call), `jshttp.ErrSchemeNotAllowed`
+  (non-HTTP/HTTPS scheme), `jshttp.ErrHostNotAllowed` (host outside the allowlist),
+  `jshttp.ErrAddressNotAllowed` (forbidden resolved address), `jshttp.ErrBodyTooLarge`
+  (response exceeds the cap), `jshttp.ErrRedirectBlocked` (redirect mode `"error"`),
+  `jshttp.ErrTooManyRedirects` (redirect chain too long).
 
 ### `jscache` — global `cache`
 
@@ -173,7 +185,8 @@ cache.delete('counter')
 
 `jscache.New(store, opts...)` takes any `cache.Cache[any]` — memory for
 single-node state, Redis for shared state — plus `WithKeyPrefix` for
-namespacing.
+namespacing. Its options are of type `jscache.Option` (e.g.
+`jscache.WithKeyPrefix(prefix)`).
 
 ### `jsevents` — global `events`
 
@@ -184,8 +197,11 @@ events.publish('report.generated', { reportId: id })
 The payload is JSON-encoded and published as an `event.RawPayload`, so Go
 subscribers decode it with `event.SubscribeTyped` as usual. Publishing is
 deliberately the only verb — subscriptions belong to the host, not to a
-per-execution runtime. `jsevents.WithAllowedTypes(patterns...)` restricts
+per-execution runtime. `jsevents.New(bus, opts...)` accepts options of type
+`jsevents.Option`; `jsevents.WithAllowedTypes(patterns...)` restricts
 the publishable type namespace.
+
+- Errors: `jsevents.ErrEmptyEventType` (empty event type), `jsevents.ErrEventTypeNotAllowed` (event type outside the allowlist).
 
 ### `jscrypto` — global `crypto`
 
@@ -200,6 +216,8 @@ crypto.uuid()
 Digests are lower-case hex; inputs are UTF-8 strings. The weak digests
 (md5, sha1) exist for legacy API signature interop — password storage
 belongs to the security module's encoders.
+
+- Error: `jscrypto.ErrUnsupportedAlgorithm` (unsupported `crypto.hmac` algorithm).
 
 ### `jsconsole` — global `console`
 
@@ -233,6 +251,12 @@ rt, err := engine.NewRuntime(js.EnableLibs("fmtx"))
 ```
 
 ## Compilation Helpers
+
+The `js` package exposes a goja pass-through surface: type aliases
+(`Runtime`, `Value`, `Object`, `Program`, `AstProgram`) and function
+aliases (`Compile`, `MustCompile`, `Is*`) mirror the upstream
+`github.com/dop251/goja` API. Every exact symbol and signature is listed
+in the public API index.
 
 | API | Contract |
 | --- | --- |

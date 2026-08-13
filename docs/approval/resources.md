@@ -114,14 +114,14 @@ reassigned to another user.
 | `delegateeId` | `string` | Yes | user receiving the delegated tasks |
 | `flowCategoryId` | `string` | No | restrict the delegation to one flow category; `null` covers all categories |
 | `flowId` | `string` | No | restrict the delegation to one flow; `null` covers all flows |
-| `startTime` | `DateTime` | Yes | delegation window start |
-| `endTime` | `DateTime` | Yes | delegation window end |
+| `startsAt` | `DateTime` | Yes | delegation window start |
+| `endsAt` | `DateTime` | Yes | delegation window end |
 | `isActive` | `bool` | No | inactive delegations are ignored by assignee resolution |
 | `reason` | `string` | No | free-text reason shown in delegated tasks |
 
 `Delegation` (response model): same business fields as the params —
-`delegatorId`, `delegateeId`, `flowCategoryId`, `flowId`, `startTime`,
-`endTime`, `isActive`, `reason` — plus the audited-model columns. Tasks that
+`delegatorId`, `delegateeId`, `flowCategoryId`, `flowId`, `startsAt`,
+`endsAt`, `isActive`, `reason` — plus the audited-model columns. Tasks that
 arrive via delegation carry the delegator as a separate person snapshot (see
 `NodeParticipant.delegator` below).
 
@@ -260,6 +260,7 @@ are immutable):
 | `keyword` | `string` | No | contains match against the flow name |
 | `isActive` | `bool` | No | filter by active flag |
 | `labels` | `object` (string→string) | No | label equality filter — every submitted pair must match |
+| `bindingMode` | `string` | No | `standalone` or `business`; filter by binding mode |
 | `page` | `int` | No | page number (1-based) |
 | `pageSize` | `int` | No | page size |
 
@@ -341,7 +342,7 @@ govern which actions a node offers at runtime.
 | `tenantId` | `string` | Yes | tenant to start under; empty coalesces to `"default"`, and the caller must be authorized for the flow's tenant |
 | `flowCode` | `string` | Yes | business code of the flow to start; resolves the latest published version (`ErrFlowNotFound` / `ErrFlowNotActive` / `ErrNoPublishedVersion`) |
 | `businessRef` | `string` (≤ 512) | business mode | opaque reference to the bound business row; required on business-bound flows unless a registered `BusinessRefProvider` supplies it (`ErrBusinessRefRequired`). Default shapes: single key verbatim, composite key as a JSON object |
-| `formData` | `object` | No | form values keyed by field key; validated against the published version's derived field list (`40401` family), rejected above 64 KiB, and stripped of fields the applicant may not edit |
+| `formData` | `object` | No | form values keyed by field key; validated against the published version's derived field list (`40401` family), rejected above 64 KiB; unknown keys are rejected (`approval_form_field_not_defined`) |
 
 The applicant identity and the condition-routing globals are resolved
 server-side from the authenticated principal (`PrincipalDepartmentResolver`,
@@ -378,7 +379,7 @@ where an applicant could forge them to steer the flow.
 | `transferToId` | `string` | `transfer` | target user; must be non-empty and different from the operator (`ErrInvalidTransferTarget`); allowed only when the node sets `isTransferAllowed` (`ErrTransferNotAllowed`) |
 | `targetNodeId` | `string` | `rollback` | rollback destination node; must be one of the node's valid targets per its `rollbackType` and the instance's visit trail (`ErrInvalidRollbackTarget`, `ErrRollbackNotAllowed`). Valid targets are served in `my.get_instance_detail` → `myTask.rollbackTargets` |
 
-`WithdrawParams` (`withdraw` — applicant pulls a running instance back):
+`WithdrawParams` (`withdraw` — applicant pulls a running instance back, or abandons a returned one):
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -390,14 +391,14 @@ where an applicant could forge them to steer the flow.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `instanceId` | `string` | Yes | instance to resubmit (`ErrResubmitNotAllowed` outside `returned` / `withdrawn`) |
-| `formData` | `object` | No | replacement form data; validated like `start` |
+| `formData` | `object` | No | form updates merged over the instance's existing form data; the merged payload is validated like `start` |
 
 `AddCCParams` / `MarkCCReadParams` (`add_cc`, `mark_cc_read`):
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `instanceId` | `string` | Yes | target instance |
-| `ccUserIds` | `string[]` (1–50) | `add_cc` only | users to CC; allowed only when the current node sets `isManualCcAllowed` (`ErrManualCcNotAllowed`) |
+| `ccUserIds` | `string[]` (1–50) | `add_cc` only | users to CC; the instance must be running on a node (`ErrInstanceCompleted`) and the caller must be an assignee of the current node (`ErrNotAssignee`); allowed only when the current node sets `isManualCcAllowed` (`ErrManualCcNotAllowed`) |
 
 `mark_cc_read` stamps the read receipt on all of the caller's unread CC
 records for the instance — a self-service read receipt, hence no audit.
@@ -425,7 +426,10 @@ records for the instance — a self-service read receipt, hence no audit.
 
 Urges honor the node's `urgeCooldownMinutes` per task (`40601` when urged too
 frequently; non-positive config defaults to 30 minutes), and the operation
-carries an extra rate limit of 10 calls per minute per caller.
+carries an extra rate limit of 10 calls per minute per caller. The applicant
+may urge any pending assignee; the applicant and anyone who ever held a task on
+the instance — directly or as a delegator — may urge any pending task; CC-only
+viewers cannot.
 
 ## `approval/my`
 
@@ -466,7 +470,7 @@ Request parameters (all decoded from `params`):
 | | `isRead` | `bool` | No | read-state filter |
 | | `page` / `pageSize` | `int` | No | pagination |
 | `get_pending_counts` | `tenantId` | `string` | No | tenant filter |
-| `get_instance_detail` | `instanceId` | `string` | Yes | instance to load; the caller must be a participant — applicant, assignee, or CC recipient (`ErrAccessDenied`) |
+| `get_instance_detail` | `instanceId` | `string` | Yes | instance to load; the caller must be a participant — applicant, assignee, delegator, or CC recipient (`ErrAccessDenied`) |
 
 Response DTOs (`approval/my` package):
 
@@ -500,6 +504,7 @@ published version), so a rendered form always implies a startable flow:
 | `instanceId` / `instanceNo` / `title` | `string` | instance identity |
 | `flowName` | `string` | flow display name |
 | `flowIcon` | `string` \| absent | flow icon |
+| `labels` | `object` \| absent | the flow's host-owned selection metadata |
 | `status` | `string` | instance status |
 | `currentNodeName` | `string` \| absent | name of the node currently in progress |
 | `createdAt` | `DateTime` | submission time |
@@ -511,7 +516,8 @@ published version), so a rendered form always implies a startable flow:
 | --- | --- | --- |
 | `taskId` | `string` | task to submit `process_task` against |
 | `instanceId` / `instanceTitle` / `instanceNo` | `string` | owning instance identity |
-| `flowName` / `flowIcon` | `string` | flow display identity |
+| `flowName` | `string` | flow display identity |
+| `flowIcon` | `string` \| absent | flow icon |
 | `applicant` | `UserInfo` | applicant snapshot |
 | `nodeName` | `string` | node the task belongs to |
 | `createdAt` | `DateTime` | task creation time |
@@ -519,9 +525,10 @@ published version), so a rendered form always implies a startable flow:
 | `isTimeout` | `bool` | whether the task is past its deadline |
 
 `CompletedTask` — one task the caller already processed: same identity fields
-as `PendingTask` plus `status` (the outcome — `approved`, `rejected`,
-`handled`, `transferred`, `rolled_back`, …) and `finishedAt`; without
-`deadline` / `isTimeout`.
+as `PendingTask` (without `createdAt`) plus `status` (the outcome — exactly
+`approved`, `rejected`, `handled`, `transferred`, or `rolled_back`),
+`instanceStatus` (the instance's current status), `labels` (the flow's host-owned
+selection metadata), and `finishedAt`; without `deadline` / `isTimeout`.
 
 `CCRecord` — one CC notification addressed to the caller:
 
@@ -529,7 +536,8 @@ as `PendingTask` plus `status` (the outcome — `approved`, `rejected`,
 | --- | --- | --- |
 | `ccRecordId` | `string` | CC record id |
 | `instanceId` / `instanceTitle` / `instanceNo` | `string` | owning instance identity |
-| `flowName` / `flowIcon` | `string` | flow display identity |
+| `flowName` | `string` | flow display identity |
+| `flowIcon` | `string` \| absent | flow icon |
 | `applicant` | `UserInfo` | applicant snapshot |
 | `nodeName` | `string` \| absent | node that produced the CC; absent for instance-level CCs |
 | `isRead` | `bool` | read receipt state |
@@ -556,11 +564,11 @@ renderable concern:
 | Field | Type | Description |
 | --- | --- | --- |
 | `instanceId` / `instanceNo` / `title` | `string` | instance identity |
-| `flowName` / `flowIcon` | `string` | flow display identity, read from the mutable flow at query time |
+| `flowId` / `flowCode` / `flowName` / `flowIcon` | `string` | flow display identity, read from the mutable flow at query time |
 | `labels` | `object` \| absent | the flow's host-owned selection metadata — display identity like `flowName`, not a version-pinned snapshot |
 | `applicant` | `UserInfo` | applicant snapshot |
 | `status` | `string` | instance status |
-| `currentNodeId` / `currentNodeName` | `string` \| absent | node currently in progress |
+| `currentNodeId` / `currentNodeName` | `string` \| absent | currently in-progress node |
 | `businessRef` | `string` \| absent | opaque business reference (business-bound flows) |
 | `formData` | `object` \| absent | form data, stripped of fields the viewer may not see |
 | `createdAt` / `finishedAt` | `DateTime` | lifecycle timestamps |
@@ -579,12 +587,29 @@ this instance:
 | `rollbackTargets` | `{nodeId, name}[]` | valid rollback destinations, resolved from the node's rollback config and the instance's visit trail exactly like the rollback command validates them; empty when rollback is not allowed |
 | `removableAssignees` | `{taskId, assignee, status}[]` | peer tasks the viewer may remove (`status` is `pending` / `waiting`), resolved exactly like the remove-assignee command authorizes them: still-actionable peers of the viewer's own visit, excluding the viewer; empty when removal is disallowed |
 
+`RollbackTarget` — one valid rollback destination:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `nodeId` | `string` | target node id |
+| `name` | `string` | node display name |
+
+`RemovableAssignee` — one peer task eligible for removal:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `taskId` | `string` | peer task id |
+| `assignee` | `UserInfo` | assignee snapshot |
+| `status` | `string` | task status (`pending` / `waiting`) |
+
 `availableActions` is a query-layer UI hint. For the applicant it includes
 `withdraw` when the instance can transition to `withdrawn`, and `resubmit`
 when the instance is returned or withdrawn. For pending tasks it includes
 `handle` for handle nodes, otherwise `approve`, then `reject`, plus
-`transfer`, `rollback`, `add_assignee`, or `add_cc` when the current node
-allows them. If the instance has any pending task, it also includes `urge`.
+`transfer`, `rollback`, `add_assignee`, `remove_assignee`, or `add_cc` when the
+current node allows them. If the instance has any pending task, it also
+includes `urge`; the applicant and anyone who ever held a task on the instance —
+directly or as a delegator — are allowed to urge (CC-only viewers are excluded).
 Command handlers still perform their own validation.
 
 ## `approval/admin`
@@ -629,7 +654,7 @@ Request parameters (all decoded from `params`):
 | `find_business_projections` | `tenantId` | `string` | No | tenant filter |
 | | `status` | `string` | No | projection status filter: `pending`, `processing`, `applied`, `failed` |
 | | `page` / `pageSize` | `int` | No | pagination |
-| `terminate_instance` | `instanceId` | `string` | Yes | running instance to force-terminate (`ErrTerminateNotAllowed` outside running states) |
+| `terminate_instance` | `instanceId` | `string` | Yes | non-final instance to force-terminate (running, returned, or withdrawn; `ErrTerminateNotAllowed` once the instance is already in a final status) |
 | | `reason` | `string` (≤ 2000) | No | termination reason recorded in the action log |
 | `reassign_task` | `taskId` | `string` | Yes | pending task to reassign |
 | | `newAssigneeId` | `string` | Yes | replacement assignee (`ErrInvalidTransferTarget` when invalid) |
@@ -668,8 +693,24 @@ Response DTOs (`approval/admin` package):
 the viewer-specific fields (`availableActions` / `fieldPermissions` /
 `myTask`): `instance` (`InstanceDetailInfo`), `formSchema` (verbatim host
 document), `timeline` (`TimelineEntry[]`), and `flowGraph`
-(`InstanceFlowGraph`). `InstanceDetailInfo` matches `my.InstanceInfo` plus
-`tenantId`, `flowId`, and `flowVersionId`, and its `formData` is unfiltered.
+(`InstanceFlowGraph`). `InstanceDetailInfo` matches `my.InstanceInfo` plus `tenantId` and
+`flowVersionId`, minus `flowIcon`; its `formData` is unfiltered.
+
+`InstanceDetailInfo` — the admin instance detail payload:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `instanceId` / `instanceNo` / `title` | `string` | instance identity |
+| `tenantId` | `string` | owning tenant |
+| `flowId` / `flowCode` / `flowName` | `string` | flow identity |
+| `flowVersionId` | `string` | the version snapshot the instance runs under |
+| `labels` | `object` \| absent | the flow's host-owned selection metadata |
+| `applicant` | `UserInfo` | applicant snapshot |
+| `status` | `string` | instance status |
+| `currentNodeId` / `currentNodeName` | `string` \| absent | currently in-progress node |
+| `businessRef` | `string` \| absent | opaque business reference (business-bound flows) |
+| `formData` | `object` \| absent | current form data (unfiltered — admin view) |
+| `createdAt` / `finishedAt` | `DateTime` | lifecycle timestamps |
 
 `ActionLog` — one audit entry. Person references are uniform `UserInfo`
 snapshots captured at action time:
@@ -716,9 +757,10 @@ model):
 | `appliedOwnerInstanceId` | `string` \| absent | instance whose state was last successfully written to the business row |
 | `businessTable` | `string` | target business table |
 | `recordKey` | JSON object | key-column values locating the bound row |
-| `consistency` | `string` | binding consistency mode from configuration (`transactional` / `eventual`) |
+| `consistency` | `string` | binding consistency mode from configuration (`synchronous` / `eventual`) |
 | `desiredStatus` | `string` | instance status awaiting write-back |
-| `desiredStartedAt` / `desiredFinishedAt` | `DateTime` | lifecycle timestamps awaiting write-back |
+| `desiredStartedAt` | `DateTime` | lifecycle timestamp awaiting write-back |
+| `desiredFinishedAt` | `DateTime` \| absent | lifecycle timestamp awaiting write-back |
 | `desiredRevision` / `appliedRevision` | `int` | monotonic revisions; the projection has converged when they are equal |
 | `status` | `string` | convergence state: `pending`, `processing`, `applied`, `failed` |
 | `attemptCount` | `int` | write attempts so far |
@@ -749,7 +791,7 @@ currently in progress — unreached nodes are not predicted:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `kind` | `string` | `start`, `approval`, `handle`, `cc` for node visits; `withdraw`, `terminate` for instance-level milestones. Structural kinds (`condition` / `end`) never appear |
+| `kind` | `string` | `start`, `approval`, `handle`, `cc`, `end` for node visits; `withdraw`, `terminate` for instance-level milestones. The `condition` structural kind never appears; the `end` visit is kept as the timeline's closing marker |
 | `nodeId` | `string` \| absent | visited node; absent on milestone entries |
 | `name` | `string` | node display name (or milestone action name) |
 | `status` | `string` | node-visit status: `active`, `passed`, `rejected`, `returned`, `canceled` |
@@ -841,6 +883,9 @@ surface rather than importing the internal Go symbols.
 | `40018` | `ErrCodeBindingSchemaInvalid` | `ErrBindingSchemaInvalid` | `approval_binding_schema_invalid` | configured binding table or columns do not exist in the primary database |
 | `40019` | `ErrCodeBindingKeyNotUnique` | `ErrBindingKeyNotUnique` | `approval_binding_key_not_unique` | key columns are not backed by one complete, non-null primary or unique key |
 | `40020` | `ErrCodeBindingStatusMappingInvalid` | `ErrBindingStatusMappingInvalid` | `approval_binding_status_mapping_invalid` | status mapping names an unknown status or maps to a blank value |
+| `40021` | `ErrCodeInvalidFlowLabel` | `ErrInvalidFlowLabel` | `approval_invalid_flow_label` | flow label key would silently break JSON or host tooling |
+| `40022` | `ErrCodeInitiatorsNotAllowed` | `ErrInitiatorsNotAllowed` | `approval_initiators_not_allowed` | `isAllInitiationAllowed=true` and `initiators` are mutually exclusive |
+| `40023` | `ErrCodeInitiatorsRequired` | `ErrInitiatorsRequired` | `approval_initiators_required` | restricted initiation requires at least one initiator rule with non-empty IDs |
 | `40101` | `ErrCodeInstanceNotFound` | `ErrInstanceNotFound` | `approval_instance_not_found` | instance lookup failed |
 | `40102` | `ErrCodeInstanceCompleted` | `ErrInstanceCompleted` | `approval_instance_completed` | instance is already complete |
 | `40103` | `ErrCodeNotAllowedInitiate` | `ErrNotAllowedInitiate` | `approval_not_allowed_initiate` | caller cannot initiate this flow |
@@ -877,8 +922,8 @@ surface rather than importing the internal Go symbols.
 | `40702` | `ErrCodeTerminateNotAllowed` | `ErrTerminateNotAllowed` | `approval_terminate_not_allowed` | terminate is not allowed from the current instance state |
 
 Startup and tenant-resolution diagnostics such as
-`ErrEventRouteNotTransactional`, `ErrEventRouteNotSubscribable`, and
-`ErrTenantNotResolved` live under `internal/approval/...`; they are not
+`ErrEventRouteNotTransactional` and `ErrTenantNotResolved` live under
+`internal/approval/...`; they are not
 importable public Go API, but operators may see their wrapped messages when
 event routing or tenant principal details are misconfigured.
 

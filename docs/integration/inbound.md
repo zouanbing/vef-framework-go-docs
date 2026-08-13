@@ -167,7 +167,9 @@ external callers do not read the envelope):
 - Verified deliveries are recorded to the invocation log per
   `vef.integration.log` with direction `inbound`; rejected deliveries stay
   out of the log deliberately (unauthenticated traffic must not grow the
-  durable evidence trail) and fold into statistics under an empty contract.
+  durable evidence trail). Deliveries rejected by verification fold into
+  statistics under an empty contract; rejections for an unknown or disabled
+  system are only logged server-side and never counted.
 - The `dry_run_inbound` operation is the inbound test console: it executes an
   inbound script against a synthetic external request with the business
   handler stubbed to return a supplied sample output. Verification is

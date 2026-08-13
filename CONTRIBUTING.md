@@ -15,7 +15,7 @@ vef-framework-go-docs/
 │   ├── data-tools/                # 7  Data Tools
 │   ├── infrastructure/            # 8  Infrastructure
 │   ├── ai-integration/            # 9  AI Integration
-│   ├── approval.md                # 10 Approval (single top-level page)
+│   ├── approval/                   # 10 Approval (workflow/approval engine)
 │   ├── advanced/                  # 11 Advanced
 │   ├── utilities/                 # 12 Utilities
 │   ├── conventions/               # 13 Conventions
@@ -76,7 +76,7 @@ Use a translated `label` in the Chinese mirror; keep `position` identical.
 | 7 | data-tools | Data Tools | 数据工具 |
 | 8 | infrastructure | Infrastructure | 基础设施 |
 | 9 | ai-integration | AI Integration | AI 集成 |
-| 10 | `approval.md` | Approval | 审批 |
+| 10 | approval | Approval | 审批 |
 | 11 | advanced | Advanced | 进阶 |
 | 12 | utilities | Utilities | 工具库 |
 | 13 | conventions | Conventions | 约定规范 |
@@ -88,8 +88,8 @@ Use a translated `label` in the Chinese mirror; keep `position` identical.
 pnpm install
 pnpm start                       # dev server (Chinese, default locale)
 pnpm start:en                    # dev server (English)
-pnpm build                       # production build (English)
-pnpm build -- --locale zh-Hans   # production build (Chinese)
+pnpm build                       # production build (all locales)
+pnpm build -- --locale zh-Hans   # production build (Chinese only)
 ```
 
 `onBrokenLinks: "throw"` is configured, so `pnpm build` hard-fails on any broken relative/absolute

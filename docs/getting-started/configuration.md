@@ -36,7 +36,7 @@ Key fields:
 
 - `name`: used as the app name and as input to JWT audience generation
 - `port`: HTTP port for the Fiber app
-- `body_limit`: parsed by Fiber; defaults to `32mib` when omitted
+- `body_limit`: maximum request body size, parsed as a human-readable byte size; defaults to `32mib` when omitted
 - `trusted_proxies`: proxy IPs/CIDRs whose forwarding headers Fiber may trust; empty means `X-Forwarded-For` is ignored
 
 ### `vef.api`
@@ -49,6 +49,10 @@ not declare its own `OperationSpec.RateLimit`:
 max    = 100   # default
 period = "5m"  # default
 ```
+
+The limiter counts requests per operation × client (IP + principal) in a
+sliding window held in process memory, so in a multi-node deployment each
+node enforces the limit independently.
 
 ### `vef.data_sources`
 
@@ -75,13 +79,15 @@ type = "sqlite"
 path = "./analytics.db"
 ```
 
-Supported `type` values (drivers registered in the framework runtime):
+Supported `type` values (the `config.DBKind` enum, drivers registered in the framework runtime):
 
 - `postgres`
 - `mysql`
 - `sqlite`
-- `sqlserver`
 - `oracle`
+- `sqlserver`
+
+Passing an unsupported kind at startup fails with an "unsupported database type" error.
 
 For SQLite, `path` is optional. When omitted, the framework uses a shared in-memory database.
 
@@ -219,7 +225,7 @@ enabled = true       # WebSocket push endpoint at /ws
 ```
 
 Full key lists live in the
-[Configuration Reference](../reference/configuration-reference#vefcron)
+[Configuration Reference](../reference/configuration-reference#vef-cron)
 and the module guides:
 [Durable Schedules](../infrastructure/cron-store),
 [Integration Engine](../integration/overview), and

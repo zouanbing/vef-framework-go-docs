@@ -73,6 +73,13 @@ type Lock interface {
 }
 ```
 
+### Constructors
+
+| API | Contract |
+| --- | --- |
+| `lock.NewMemoryLocker() lock.Locker` | creates an in-process locker for single-instance deployments and tests |
+| `lock.NewRedisLocker(client *redis.Client) lock.Locker` | creates a Redis-backed locker for cross-replica mutual exclusion |
+
 `Acquire` retries until the `WithWait` window is exhausted (no waiting by
 default); `TryAcquire` is a single non-blocking attempt. Both return
 `lock.ErrNotAcquired` when the lock stays held by someone else, and fail

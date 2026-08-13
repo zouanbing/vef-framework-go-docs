@@ -103,16 +103,18 @@ Flags:
 | `--package`, `-p` | `schemas` | package name for generated schema files |
 
 Directory input writes one schema file per input file. Directory mode processes
-only `*.go` files directly inside the input directory; it is not recursive. A
-directory input may point at an existing output directory or a directory path
-that does not exist yet. If the output path already exists as a file,
-directory-to-file generation is rejected.
+only `*.go` files directly inside the input directory; it is not recursive. Test
+files (`_test.go`) and files excluded by build constraints are skipped. For
+directory input, the output may be an existing directory or a directory path that
+does not exist yet (it is created as needed). If the output path already exists
+as a file, directory-to-file generation is rejected.
 
 The generator reads structs in the target file that embed `orm.BaseModel`.
-Table metadata comes from the embedded `orm.BaseModel` field's `bun` tag:
-`table:...` sets the table name and `alias:...` sets the default alias. Without
-those tag parts, the table defaults to the pluralized snake_case model name and
-the alias defaults to the singular snake_case model name.
+Table metadata comes from the embedded `orm.BaseModel` field's `bun` tag: the
+bare name segment (e.g. `bun:"users"`) or the `table:...` option sets the table
+name (`table:` wins), and `alias:...` sets the default alias. Without those tag
+parts, the table defaults to the pluralized snake_case model name and the alias
+defaults to the singular snake_case model name.
 
 Field handling is source-compatible with these rules:
 
@@ -120,6 +122,7 @@ Field handling is source-compatible with these rules:
 - `bun:"-"` fields are skipped
 - `bun:"rel:*"` and `bun:"m2m:*"` relationship fields are skipped
 - a first `bun` tag component such as `bun:"user_name"` sets the column name
+- an explicit `column:...` option overrides both the bare name segment and the field name
 - fields without a column tag use the field name in snake_case
 - embedded structs are expanded
 - `bun:"embed:prefix_"` expands nested fields with the prefix

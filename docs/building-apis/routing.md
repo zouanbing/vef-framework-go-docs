@@ -117,6 +117,19 @@ Parsing rules:
 | action method token | lowercase HTTP verb | `get`, `post`, `put`, `delete`, `patch` |
 | action sub-resource | optional slash-separated kebab-case path | `profile`, `admin/users`, `user-friends` |
 
+## Framework-Reserved Query Keys
+
+The framework reserves some query keys for its own plumbing. The REST router
+strips them from the request before the business parameter space is built, so
+they never appear in `params`.
+
+| Reserved key | Purpose |
+| --- | --- |
+| `__accessToken` | Carries the bearer token for requests that cannot set the `Authorization` header (for example, a browser `<img src>` or download link). The auth layer reads it from the Fiber context. |
+
+Because these keys are consumed by the framework, they are not available to
+business handlers and will not be reported as unmapped keys.
+
 ## How `params` Are Collected
 
 ### RPC
@@ -277,6 +290,49 @@ Unless an operation overrides them, the API engine applies these defaults:
 | timeout | `30s` |
 | auth strategy | Bearer |
 | rate limit | `100` requests per `5 minutes` |
+
+## Request Body Transport Encoding
+
+For requests on the `/api` surface, a client can opt into transport encoding the
+request body so that code-shaped payloads (integration adapter scripts, envelope
+or auth scripts, `dry_run` bodies) survive middleboxes that false-positive on
+them. The encoding is decoded back to raw JSON before the dispatcher parses it.
+
+A client opts in by setting the header:
+
+```http
+X-Body-Encoding: base64
+```
+
+or:
+
+```http
+X-Body-Encoding: gzip+base64
+```
+
+Supported values:
+
+| Value | Meaning |
+| --- | --- |
+| `base64` | Body is base64 of the raw JSON |
+| `gzip+base64` | Body is base64 of a gzip stream of the raw JSON (decode order: base64, then gunzip) |
+
+Native `Content-Encoding` values such as `gzip`, `br`, `deflate`, and `zstd` are
+decompressed by Fiber itself; this middleware covers only the base64 forms Fiber
+does not know.
+
+Decoding happens before the content-type guard and dispatcher run, on `/api`
+paths only. Storage, content-hash caches, and audit all see the raw body. The
+body-limit guard (`vef.app.body_limit`) is applied to the decoded size, so a
+decompression bomb cannot outgrow it.
+
+Failure modes:
+
+| Case | Result |
+| --- | --- |
+| Unsupported `X-Body-Encoding` value | `api.ErrUnsupportedBodyEncoding` (HTTP 400) |
+| Malformed base64 or corrupt gzip stream | `api.ErrBodyDecodeFailed` (HTTP 400) |
+| Decoded body larger than the configured limit | `api.ErrBodyTooLarge` (HTTP 413) |
 
 ## Response Shape
 

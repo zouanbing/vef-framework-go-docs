@@ -154,6 +154,7 @@ Built-in transports:
 | `event/transport/memory` | `memory` | in-process, ordered, at-most-once. Default fallback. |
 | `event/transport/outbox` | `outbox` | persistent, transactional, durable, at-least-once, **publish-only**. A relay drains records into a sink transport. |
 | `event/transport/redisstream` | `redis_stream` | durable, at-least-once, supports groups. Cross-process fan-out via Redis Streams. |
+| `event/transport/txmemory` | `tx_memory` | in-process, transactional, **not durable**. The transactional counterpart of the memory transport: events become visible iff the business transaction commits, but nothing is persisted, so a crash between commit and delivery loses the frame. Designed for development against a shared database where the outbox relay would claim rows from random nodes. Not for production. |
 
 `PublishOnly` is important: routing to the outbox alone makes events publishable but not deliverable. Subscribers attach to the sink transport (the outbox `sink` setting). The bus filters out publish-only transports when resolving Subscribe targets.
 
@@ -231,6 +232,7 @@ Public supporting APIs:
 | `event/transport/memory` | `Name`, `Config`, `FullPolicy`, `FullPolicyError`, `FullPolicyBlock`, `FullPolicyDropOldest` |
 | `event/transport/outbox` | `Name`, `Config`, `Status`, `StatusPending`, `StatusProcessing`, `StatusCompleted`, `StatusFailed`, `StatusDead`, `Record`, `Repository` |
 | `event/transport/redisstream` | `Name` and `Config` |
+| `event/transport/txmemory` | `Name` and `Config` |
 
 `ChainPublish` and `ChainConsume` sort middleware by ascending `Order`; equal
 orders preserve registration order. Built-in cron jobs are named
@@ -410,6 +412,42 @@ idle_group_retention     = "24h"
 idle_group_sweep_interval = "10m"
 ```
 
+## In-Process Transactional Transport (`tx_memory`)
+
+The `tx_memory` transport satisfies the transactional-route assertion that the
+approval and storage modules make at boot (`Transactional: true`) but delivers
+**in the publishing process** instead of persisting a row. It is off by default
+and deliberately not durable:
+
+```toml
+[vef.event.transports.tx_memory]
+enabled          = true
+queue_size       = 1024
+full_policy      = "error"   # error | block | drop_oldest
+publish_timeout  = "5s"
+```
+
+The motivating problem is a team whose dev instances all point at one database:
+the outbox relay's `ClaimBatch` has no owner predicate, so any node's relay may
+claim any node's rows — the handler for A's action tends to run on B's machine.
+Routing to `tx_memory` keeps every event in the process that published it and
+drops delivery latency from the relay poll interval to zero.
+
+`tx_memory` is deliberately a separate transport rather than a transactional
+mode of `memory`: `memory` must keep declaring `Transactional: false` so a
+production deployment that forgot to enable the outbox still fails fast instead
+of silently accepting an in-process, non-durable route.
+
+Capabilities: `Transactional`, not `Durable`, not `Ordered` (releases happen at
+commit time, so concurrent transactions deliver in commit order, not publish
+order), not `AtLeastOnce` (subscribers written with `WithGroup` still work
+because the bus only rejects missing groups on at-least-once transports).
+
+Enabling it logs a `Warn` — it is the development transport, not a production
+choice. The sibling lotteries a shared dev database also creates (approval
+timeout scanner, eventual business-projection worker, storage delete worker,
+durable cron claim loop) are unaffected; `tx_memory` fixes only the event lane.
+
 ## Error Sentinels
 
 | Error | Meaning |
@@ -482,6 +520,7 @@ func registerUserProjections(lc fx.Lifecycle, bus event.Bus, inspector event.Rou
 | publish must commit with business write | `outbox` (→ sink) |
 | cross-process delivery, at-least-once | `redis_stream` |
 | reliable approval / saga events | `outbox` + `redis_stream` sink |
+| development against a shared database, events stay in the publishing process | `tx_memory` |
 
 ## Next Step
 

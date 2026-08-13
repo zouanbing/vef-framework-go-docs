@@ -446,7 +446,7 @@ db.NewSelect().Model(&users).
 `RelationSpec` 字段说明：
 - `Model`：关联模型（必填）
 - `Alias`：自定义表别名（默认：模型的默认别名）
-- `JoinType`：`orm.JoinLeft`（默认）、`orm.JoinInner`、`orm.JoinRight` 等
+- `JoinType`：`orm.JoinDefault`（行为默认为 LEFT JOIN）、`orm.JoinLeft`、`orm.JoinInner`、`orm.JoinRight`、`orm.JoinFull`、`orm.JoinCross`
 - `ForeignColumn`：为空时自动解析为 `{模型名}_{主键}`
 - `ReferencedColumn`：为空时自动解析为主键
 - `SelectedColumns`：要选择的列及其别名
@@ -558,7 +558,7 @@ db.NewSelect().Model(&user).ForKeyShare().Scan(ctx)
 db.NewSelect().Model(&user).ForNoKeyUpdate().Scan(ctx)
 ```
 
-> 注意：SQLite 不支持行级锁定——调用会被静默忽略并记录警告。
+> 方言支持：SQLite 不支持行级锁定——调用会被静默忽略并记录警告。`FOR NO KEY UPDATE` 和 `FOR KEY SHARE` 仅 PostgreSQL 支持；在 MySQL 上会被静默忽略并记录警告。每种方言与锁模式的组合在一个进程内只警告一次，避免锁行循环刷屏日志。
 
 ## 执行方法
 
@@ -608,6 +608,21 @@ db.NewSelect().Model(&users).
 	}).
 	Scan(ctx)
 ```
+
+## 静默 SQL 日志
+
+`orm.DB` 的 SQL 查询钩子在 context 带有静默 SQL 日志标记时，会将成功的
+语句日志从 Info 降级为 Debug。框架维护循环（持久化 cron 引擎的 claim/sweep
+轮询）在此标记下执行周期性查询，以保持稳态日志整洁；宿主应用也可用同样方式
+标记自己的轮询工作。
+
+| 辅助函数 | 契约 |
+| --- | --- |
+| `IsQuietSQLLog(ctx)` | 报告 context 是否带有静默 SQL 日志标记 |
+| `WithQuietSQLLog(ctx)` | 标记 context，使查询钩子将成功语句日志降级为 Debug |
+| `WithoutQuietSQLLog(ctx)` | 解除标记；框架轮询循环标记自己的簿记静默，但该标记不应残留在交接给宿主代码的上下文中 |
+
+慢查询警告和失败日志保持原有级别——降噪绝不能掩盖问题。
 
 ## 下一步
 

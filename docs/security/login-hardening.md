@@ -94,6 +94,12 @@ counts toward the same lockout key, and a tripped lockout blocks both
 endpoints — so an attacker who reaches the challenge step cannot brute-force
 it outside the lockout budget.
 
+Reserved-principal rejections (see
+[Authentication: Reserved Identities](./authentication#reserved-identities))
+are audited but **not** counted toward lockout, because the credential may
+have been correct and the fault lies with the authenticator or challenge
+provider.
+
 ### Enabling and configuring it
 
 Lockout is **on by default** (`max_failures = 10`). Configure it under

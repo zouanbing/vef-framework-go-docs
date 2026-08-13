@@ -12,8 +12,9 @@ sidebar_position: 1
 
 - Go `1.26.4`
 
-内置表达式引擎是 pure Go。expression 模块本身不要求 CGO；只有当你选择
-的数据库驱动或其他 native integration 需要时，才需要启用 CGO。
+整个框架以 `CGO_ENABLED=0` 构建：内置表达式引擎使用 pure Go 的
+`expr-lang` 库，所有内置数据库驱动也都是 pure Go。只有当你自行引入
+native 依赖时，才需要启用 CGO。
 
 ## 运行前提
 
@@ -105,22 +106,24 @@ enabled = true
 
 [[vef.event.routing]]
 pattern    = "vef.storage.*"
-transports = ["outbox"]
+transports = ["outbox", "memory"]
 ```
 
 `primary` 数据源是必填项，它为全框架注入的 `orm.DB` 提供来源；其他命名数据源也放在同一个 `vef.data_sources` map 下。
 
 两个事件配置块不是可有可无的点缀：存储模块以事务方式发布领域事件，当
 `vef.storage.*` 没有事务性路由时（默认的 `memory` 传输不具备事务性），
-应用**启动即失败**。改设 `vef.event.default_transport = "outbox"` 是免路由
-规则的替代方案。这一失败的完整演示见[快速开始](./quick-start)。
+应用**启动即失败**。路由里把 `"memory"`（outbox 的默认 sink，即
+`vef.event.transports.outbox.sink`）和 `"outbox"` 写在一起，进程内订阅者
+才能挂接到这条路由；只写 outbox 的路由可以发布事件，但任何订阅都会失败。
+改设 `vef.event.default_transport = "outbox"` 是免路由规则的替代方案。这一失败的完整演示见[快速开始](./quick-start)。
 
 这里没有写存储配置也没关系，因为框架会默认回退到内存存储。
 只有当应用真的使用 Redis 相关能力时，再补 `vef.redis` 即可。
 
 ## 启动时实际会发生什么
 
-当你调用 `vef.Run(...)` 时，框架会依次初始化配置、数据源 registry 和 primary `orm.DB`、中间件、API、安全、事件（含 outbox / redis-stream / inbox 传输子模块）、表达式引擎、JS 引擎、CQRS、定时任务、Redis、分布式锁、mold、存储、sequence、schema、监控、MCP、服务端推送以及最终的 HTTP 服务。
+当你调用 `vef.Run(...)` 时，框架会依次初始化配置、数据源 registry 和 primary `orm.DB`、中间件、API、安全、事件（含 tx_memory / outbox / redis-stream / inbox 传输子模块）、表达式引擎、JS 引擎、CQRS、定时任务、Redis、分布式锁、mold、存储、sequence、schema、监控、MCP、服务端推送以及最终的 HTTP 服务。
 
 所以对 VEF 来说，“安装完成”不只是把包 import 进来，而是要准备好能支撑这条启动链的最小配置。
 

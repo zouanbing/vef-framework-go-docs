@@ -21,8 +21,8 @@ defaults to `memory` and logs a warning; objects are lost on restart.
 
 Set `vef.storage.auto_migrate = true` when the storage tables should be created
 by the module at startup. The migration is idempotent and checks
-`sys_storage_upload_claim`, `sys_storage_upload_part`, and
-`sys_storage_pending_delete`.
+`sys_storage_upload_claim`, `sys_storage_upload_part`,
+`sys_storage_pending_delete`, and `sys_storage_file`.
 
 ## `storage.Service` Interface
 
@@ -81,6 +81,16 @@ The storage module registers an RPC resource with the multipart upload actions:
 | `abort_upload` | Bearer auth (engine default) | `AbortUploadParams` | success, no `data` payload | abort and release a session |
 
 Download is served via the proxy middleware described below.
+
+### File Registry Resource: `sys/storage/file`
+
+A separate read-side resource (`sys/storage/file`) exposes one action:
+
+| Action | Access | Input | Output | Purpose |
+| --- | --- | --- | --- | --- |
+| `file/resolve` | Bearer auth (engine default) | `ResolveParams` | `ResolveResult` | Resolve a batch of object keys (≤ 200) into per-file metadata — original filename, content type, size, status, upload timestamp. Keys not visible to the caller are silently omitted. |
+
+This resource is intentionally separate from the multipart upload lifecycle: it is a query surface over the durable file registry, not a step in the chunked-upload state machine. Authorization mirrors the download proxy — `pub/` keys are open, everything else goes through `storage.FileACL.CanRead`.
 
 None of the five actions declares a per-action permission, a public flag, a
 custom rate limit, or audit logging, so all of them inherit the API engine
@@ -255,9 +265,8 @@ Behavior — abort is the retry-safe cleanup path:
   still rejected with `result.ErrAccessDenied`.
 - Only `pending` claims are aborted. Calling it on an `uploaded` claim is a
   no-op success — abort never deletes a finalized object.
-- A pending claim's backend session is aborted (failure surfaces
-  `ErrCodeAbortFailed`), any published object bytes are deleted, and one
-  transaction drops the part rows and the claim row.
+- A pending claim's backend session is aborted, any published object bytes are
+  deleted, and one transaction drops the part rows and the claim row.
 - The success response carries no payload: `data` is `null`.
 
 ## Client Walkthrough: Multipart Upload
@@ -410,7 +419,12 @@ Downloads are plain HTTP `GET`s against the proxy route, not RPC actions:
 curl -O http://localhost:8080/storage/files/pub/2026/07/09/6c9e6f0e-8d5a-4d5e-9a3b-2f4a1c7e9b21.pdf
 ```
 
-`pub/*` keys are served anonymously. For any other key the proxy calls `FileACL.CanRead` with the request principal; the framework does not resolve a token on this route itself, so private downloads need a registered `FileACL` plus app-level middleware that sets the principal (see the proxy middleware section below).
+`pub/*` keys are served anonymously. For any other key the proxy resolves the
+request principal from `Authorization: Bearer` (or `?__accessToken=` for
+browser contexts that cannot set a header) and calls `FileACL.CanRead` with
+that principal. A request with no credential reaches the ACL as nil (the ACL
+is the authority and may grant an anonymous read); a credential that is present
+but invalid is rejected.
 
 ## Visibility Prefixes
 
@@ -449,9 +463,56 @@ Behavior:
 | --- | --- |
 | Routing | app middleware named `storage_proxy` at order `900`; not an RPC action and not dispatched by the API engine |
 | Key validation | URL-decodes `<key>` once; rejects empty keys, absolute paths, `..` segments, backslashes, NUL bytes, redundant slashes, and trailing slashes |
-| Access | serves `pub/*` anonymously; every other key calls `FileACL.CanRead` with the request principal |
+| Access | serves `pub/*` anonymously; every other key calls `FileACL.CanRead` with the request principal. The proxy resolves the principal from `Authorization: Bearer` or `?__accessToken=` only for non-`pub/` keys — a credential that is present but invalid is rejected, while a request with no credential reaches the ACL as nil. |
 | Content type | uses backend metadata or extension detection, then sanitizes unsafe types to `application/octet-stream`; always sends `X-Content-Type-Options: nosniff` |
 | Cache headers | `pub/*` gets `Cache-Control: public, max-age=3600, immutable` and an `ETag` when stat data has one; non-public keys get `Cache-Control: private, no-store` and no `ETag` |
+
+## File Registry
+
+Every uploaded file is recorded in a durable registry table (`sys_storage_file`,
+public model `storage.FileRecord`). The registry is what makes a stored key
+nameable after the short-lived upload claim row is deleted by business adoption.
+
+```go
+type FileRegistry interface {
+    Lookup(ctx context.Context, keys []string) (map[string]FileRecord, error)
+}
+```
+
+`FileRecord` fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | the storage object key, the natural join key |
+| `originalFilename` | `string` | client-supplied filename at upload time |
+| `contentType` | `string` | sanitized MIME type |
+| `size` | `int64` | object size in bytes |
+| `public` | `bool` | whether the object landed under the public prefix |
+| `status` | `string` | lifecycle state: `uploaded` → `claimed` → `deleted` |
+| `startedAt` | timestamp | when the upload session was opened |
+| `claimedAt` | timestamp | when a business transaction adopted the file; nil while unreferenced |
+| `deletedAt` | timestamp | when the delete worker removed the object; nil while the object exists |
+| `deleteReason` | `string` | reason for deletion; empty until deleted |
+
+`FileStatus` values:
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `FileStatusUploaded` | `uploaded` | object finalized in the backend, no business adoption yet |
+| `FileStatusClaimed` | `claimed` | business transaction adopted the upload |
+| `FileStatusDeleted` | `deleted` | delete worker removed the object from the backend |
+
+The record is a projection of the upload claim — every field is copied from it.
+The download proxy resolves each key through the registry to serve an RFC 6266
+`Content-Disposition` with the original filename.
+
+`FileRegistry` is read-only by design. Recording an upload is the framework's
+own completeness invariant, happening inside the transaction that finalizes the
+upload. Business code injects `FileRegistry` via DI to render filenames for
+stored object keys.
+
+The registry also participates in the `sys/storage/file.resolve` RPC action —
+a client-facing batch lookup, ACL-gated per key exactly like the proxy.
 
 ## Upload Claims and Pending Delete (Lifecycle)
 
@@ -637,6 +698,8 @@ All three are published through the outbox transport with `event.WithTx(...)`. `
 | `DeleteReasonReplaced` | `replaced` | an `uploaded_file` field was overwritten with a new key |
 | `DeleteReasonDeleted` | `deleted` | the owning business row was deleted |
 | `DeleteReasonClaimExpired` | `claim_expired` | a pending claim expired (framework-internal sweeper only) |
+| `DeleteReasonAborted` | `aborted` | the uploader canceled an in-flight upload (framework-internal `abort_upload` only) |
+| `DeleteReasonOrphaned` | `orphaned` | an upload finalized but was never adopted by a business transaction (framework-internal claim sweeper only) |
 
 Dead-letter events carry a sanitized `lastError` classification rather than raw
 backend errors. Current values are `access_denied`, `bucket_not_found`,
@@ -648,10 +711,11 @@ Public supporting APIs:
 | --- | --- |
 | event constructors | `EventTypeFileClaimed`, `EventTypeFileDeleted`, `EventTypeDeleteDeadLetter`, `NewFileClaimedEvent`, `NewFileDeletedEvent`, `NewDeleteDeadLetterEvent` |
 | facade constructors | `NewFiles`, `NewFilesFor`, `MultipartFor` |
-| lifecycle services | `ClaimConsumer`, `DeleteEnqueuer`, `Files`, `FilesFor[T]` |
+| lifecycle services | `ClaimConsumer`, `DeleteEnqueuer`, `Files`, `FilesFor[T]`, `FileRegistry` |
 | storage interfaces | `Service`, `Multipart`, `FileACL`, `URLKeyMapper` |
-| URL mappers | `DefaultFileACL`, `IdentityURLKeyMapper`, `ProxyURLKeyMapper`, `DefaultProxyPrefix` |
+| URL mapper | `DefaultFileACL`, `IdentityURLKeyMapper`, `ProxyURLKeyMapper`, `DefaultProxyPrefix` |
 | metadata helpers | `CanonicalizeMetadataKeys` |
+| registry types | `FileRecord`, `FileStatus`, `FileStatusUploaded`, `FileStatusClaimed`, `FileStatusDeleted` |
 | option structs | `PutObjectOptions`, `GetObjectOptions`, `DeleteObjectOptions`, `DeleteObjectsOptions`, `CopyObjectOptions`, `StatObjectOptions`, `InitMultipartOptions`, `PutPartOptions`, `CompleteMultipartOptions`, `AbortMultipartOptions` |
 | result structs | `ObjectInfo`, `MultipartSession`, `PartInfo`, `CompletedPart`, `FileRef` |
 | meta constants | `MetaType`, `MetaTypeUploadedFile`, `MetaTypeRichText`, `MetaTypeMarkdown` |
@@ -705,7 +769,17 @@ the failure rides in the body `code`. Each `ErrCode*` constant pairs with a
 | `2216` | `storage.ErrUploadPartsIncomplete` | `storage_upload_parts_incomplete` | `complete_upload` with fewer recorded parts than `partCount` |
 | `2217` | `storage.ErrUploadObjectNotFound` | `storage_object_not_found` | idempotent `complete_upload` retry: backend session closed and no object exists |
 | `2218` | `storage.ErrUploadSizeMismatch` | `storage_upload_size_mismatch` | assembled object size differs from the declared `size`; the object is deleted before the error returns |
-| `2219` | `storage.ErrAbortFailed` | `storage_abort_failed` | the backend refused to abort the multipart session |
+| `2220` | `storage.ErrInvalidFilename` | `storage_invalid_filename` | `init_upload` received an invalid filename |
+
+### Storage API error code constants
+
+| Constant | Code | Trigger |
+| --- | --- | --- |
+| `storage.ErrCodeInvalidFileKey` | 2200 | malformed object key on the download proxy (`/storage/files/<key>`) |
+| `storage.ErrCodeFileNotFound` | 2201 | object missing from the backend |
+| `storage.ErrCodeFailedToGetFile` | 2202 | backend read or `FileACL` evaluation failed |
+| `storage.ErrCodeClaimNotMultipart` | 2212 | claim row without a bound backend session |
+| `storage.ErrCodeInvalidFilename` | 2220 | `init_upload` received an invalid filename |
 
 Ownership violations and unknown claim IDs are not in this range: they answer
 with the framework-generic `result.ErrAccessDenied` (code `1100`, HTTP 403) so

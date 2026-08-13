@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Mapx
 
-`mapx` 包提供 Go 结构体与 `map[string]any` 之间的双向转换，底层基于 `github.com/go-viper/mapstructure/v2`。VEF 覆盖了上游的默认 tag —— 框架默认使用 `json` tag。
+`mapx` 包提供 Go 结构体与 `map[string]any` 之间的双向转换，底层基于 `github.com/go-viper/mapstructure/v2`。VEF 覆盖了上游的默认 tag —— 框架默认使用 `json` tag，并启用 mapstructure 的 squashing，使用 `inline` tag option。
 
 ## API 参考
 
@@ -38,11 +38,6 @@ sidebar_position: 5
 | `mapx.ErrCollectionSetUnsupportedTarget` | collection set element kind 没有转换策略时的 sentinel |
 | `mapx.ErrJSONNumberNotInteger` | 小数或指数形式的 `json.Number` 落到整数字段时的 sentinel |
 | `mapx.ErrJSONNumberOverflow` | `json.Number` 超出数值目标类型范围时的 sentinel |
-
-decoder hook 链会翻译数字保真 JSON 解析产生的 `json.Number` 值：
-数值目标按精确位数解析、严格性对齐 `encoding/json`，`json.Number` /
-`json.RawMessage` 目标保留字面量，其余目标——最重要的是 `any`——看到
-`float64`，动态消费者的既有运行时契约不变。
 
 ## 结构体转 Map
 
@@ -132,18 +127,54 @@ err = decoder.Decode(data)
 - `encoding.TextUnmarshaler` —— 任何实现了 `UnmarshalText` 的类型
 - string → 基础类型的隐式转换（int / uint / float / bool）
 
-collection-set 解码为 `string`、有符号整数、无符号整数、`float32` 和
-`float64` 注册。它会拒绝 nil element、string/numeric family mismatch、
+collection-set 解码为 `string`、全部有符号/无符号整数宽度以及
+`float32`/`float64` 注册。它会拒绝 nil element、string/numeric family mismatch、
 numeric overflow、fractional float 转 integer set、NaN 或 infinity 转
 integer set，以及负数转 unsigned set。
-
-`timex.DateTime` / `timex.Date` / `timex.Time` 是基于 `time.Time` 的命名类型，能否命中上述 `time.Time` hook 取决于 mapstructure 对底层类型的处理。如果依赖这类自动解码，请按场景实际验证一遍。
 
 `WithDecodeHook(myHook)` 会替换默认 composed hook。若要扩展默认行为，请先把
 自定义 hook 和 `mapx.DecoderHook` compose，再传给 `WithDecodeHook`。
 
-组合后的默认 hook 也公开为 `mapx.DecoderHook`，metadata 收集使用公开别名
-`mapx.Metadata`。
+## 默认解码器行为
+
+`NewDecoder` 创建的解码器在默认 hook 之外还有以下 VEF 默认值：
+
+| 默认项 | 值 | 作用 |
+| --- | --- | --- |
+| `TagName` | `json` | 读取 `json` tag，而非上游默认的 `mapstructure`。 |
+| `Squash` | `true` | 启用 squashing。 |
+| `SquashTagOption` | `inline` | struct tag 中的 `inline` 选项标记嵌入字段可展开。 |
+| `MatchName` | `mapKey == lo.CamelCase(fieldName)` | 区分大小写的 CamelCase 匹配。 |
+
+因此，嵌入结构体可以通过 `inline` tag option 展开：
+
+```go
+type Embedded struct {
+    ID int `json:"id"`
+}
+
+type Parent struct {
+    Name string `json:"name"`
+    Embedded `json:"embedded,inline"`
+}
+
+out, err := mapx.FromMap[Parent](map[string]any{"name": "vef", "id": 1})
+// out.ID == 1, out.Name == "vef"
+```
+
+## json.Number 处理
+
+默认 `DecoderHook` 会规范化 number-preserving JSON 解析产生的 `json.Number`
+（`json.Decoder.UseNumber`）：
+
+- 类型化的数值目标（`int`、`uint`、`float` 及命名数值类型）会进行精确数字解析；
+  小数或超出目标范围的值会返回 `ErrJSONNumberNotInteger` 或 `ErrJSONNumberOverflow`。
+- `json.Number` 和 `json.RawMessage` 目标保留字面数字。
+- `any` / `interface{}` 目标以及 `map[string]any`、`[]any` 容器会看到 `float64`，
+  保持 `json.Number` 之前对动态消费者的运行时契约。
+
+这意味着用 `mapx` 解码后的 `map[string]any` 不会再把 `json.Number` 泄漏到
+无类型字段中，而类型化字段即使在 `2^53` 以上仍能保持精确精度。
 
 ## 错误哨兵
 
@@ -158,3 +189,5 @@ integer set，以及负数转 unsigned set。
 | `ErrCollectionSetNotFinite` | NaN 或 infinity 不能解码到整数 set |
 | `ErrCollectionSetNegative` | 负数不能解码到无符号 set 元素 |
 | `ErrCollectionSetUnsupportedTarget` | 目标 set 元素 kind 没有转换策略 |
+| `ErrJSONNumberNotInteger` | 小数或指数形式的 `json.Number` 不能转成整数目标 |
+| `ErrJSONNumberOverflow` | `json.Number` 超出目标数值类型范围 |

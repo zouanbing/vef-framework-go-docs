@@ -20,6 +20,7 @@ sidebar_position: 2
 | --- | --- | --- | --- |
 | `security/auth` | `security` | 混合：部分 action 公开，部分需要 Bearer 认证 | 登录、刷新令牌、登出、挑战校验、当前用户信息 |
 | `sys/storage` | `storage` | 默认 Bearer 认证 | 多片上传 session 生命周期（init / part / list / complete / abort）。下载走 `/storage/files/<key>` app 代理，不通过 RPC。 |
+| `sys/storage/file` | `storage` | 默认 Bearer 认证 | 将对象 key 解析为文件元数据（原始文件名、Content-Type、大小、状态、上传信息）。受 ACL 治理，与下载代理相同。 |
 | `sys/schema` | `schema` | 默认 Bearer 认证 | 数据库结构检查 |
 | `sys/monitor` | `monitor` | 默认 Bearer 认证 | 运行时与宿主机监控信息 |
 | `sys/cron/schedule`、`sys/cron/run` | `cron`（store） | Bearer 认证 + `cron.schedule.*` / `cron.run.*` 权限 | 持久化调度管理与运行流水账。仅当 `vef.cron.store.enabled = true` 时挂载操作 |
@@ -111,6 +112,14 @@ sidebar_position: 2
 
 - `/storage/files/<key>` 是 app-level 下载代理路由，不是 RPC action。
 - 它不会自动继承 RPC 层 Bearer 认证；`pub/*` 匿名可读，其他 key 由 `storage.FileACL` 决定。
+
+## `sys/storage/file`
+
+文件注册表的只读资源。用途：将业务模块存储的 object key 批量解析为 UI 渲染文件列表所需的元数据（原始文件名、内容类型、大小、状态、上传时间）。
+
+| Action | 访问方式 | 限流 | 作用 | 参数 |
+| --- | --- | --- | --- | --- |
+| `file/resolve` | 需要 Bearer 认证 | 继承 API 引擎默认限流 | 批量查询 object key（≤ 200）的文件元数据。调用方不可见的 key 会被静默省略——区分"不归你"与"不存在"会泄露文件存在性。 | `ResolveParams` |
 
 ### `init_upload` 参数
 

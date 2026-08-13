@@ -53,6 +53,8 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | `cron.NewJobHandler(name, execute, opts...)` | 适配函数；`execute` 接收完整的 `cron.Execution` |
 | `cron.NewTypedJobHandler[P](name, execute, opts...)` | 运行前把调度参数解码为 `P`；解码失败直接把该运行记为 failed 而不调用函数 |
 | `cron.WithDefaultSchedule(spec)` | 随处理器携带默认调度；存储在启动时按缺失播种。spec 的 `Name` 回退为任务名 |
+| `cron.DefaultScheduleProvider` | 可选的处理器能力，用于携带默认调度；存储在启动时按缺失播种 |
+| `cron.JobHandlerOption` | `NewJobHandler` 与 `NewTypedJobHandler` 接收的 option 类型 |
 | `cron.Execution` | 运行的只读视图：`RunID`、`ScheduleID`、`ScheduleName`、`JobName`、`ScheduledAt`（逻辑触发时间）、`Params`（原始 JSON）、`BindParams(v)` |
 
 每次触发至多被一个节点认领，但当调度设置了 `Recover` 时，崩溃的运行会重新
@@ -67,6 +69,29 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | `cron.Expr(expr, timezone)` | `cron` | 在 IANA 时区中求值的 cron 表达式。支持 5 段、6 段（前导秒）与 `@` 描述符（`@daily`、`@every 90m`）。时区为空解析为 `UTC` ——持久化调度永远不依赖节点的进程本地时区（`"Local"` 被拒绝）。内嵌 tzdata 保证无 zoneinfo 的部署也能加载时区 |
 | `cron.Every(duration)` | `interval` | 固定频率，最小 `1s`（`cron.MinInterval`）。频率锚定在调度起点（`StartsAt`，否则创建时间），触发相位不受补偿触发和手动触发影响 |
 | `cron.Once(at)` | `once` | 单次触发 |
+
+### 触发器类型与常量
+
+| API | 契约 |
+| --- | --- |
+| `cron.TriggerKind` | 触发器类型的 string 判别值 |
+| `cron.TriggerCron` | cron 表达式触发器类型 |
+| `cron.TriggerInterval` | 固定频率触发器类型 |
+| `cron.TriggerOnce` | 单次触发器类型 |
+| `cron.DefaultTimezone` | cron 触发器未指定时区时的求值时区（`"UTC"`） |
+| `cron.MaxDurationMilliseconds` | `time.Duration` 能表示的最大整毫秒数；超过该值的频率/超时不支持 round-trip |
+
+### 触发器校验错误
+
+| 错误 | 触发条件 |
+| --- | --- |
+| `cron.ErrTriggerKindUnknown` | 触发器类型不在 `cron`、`interval`、`once` 词汇表内 |
+| `cron.ErrTriggerExprRequired` | cron 触发器缺少表达式 |
+| `cron.ErrTriggerExprInvalid` | cron 表达式无法解析 |
+| `cron.ErrTriggerTimezoneInvalid` | 指定的 IANA 时区无法加载 |
+| `cron.ErrTriggerIntervalTooShort` | 固定频率低于 `cron.MinInterval` |
+| `cron.ErrTriggerIntervalTooLong` | 固定频率超过 `MaxDurationMilliseconds` |
+| `cron.ErrTriggerFireTimeRequired` | 单次触发器缺少触发时间 |
 
 不属于所选类型的字段会被拒绝（`ErrTriggerFieldsConflict`），无法解析的
 表达式、无法加载的时区、低于 1 秒的间隔、缺失的触发时间同样被拒绝。
@@ -113,6 +138,15 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | --- | --- |
 | `forbid`（默认） | 与同调度仍在执行的运行重叠的触发被抑制并记为 `skipped`。恢复请求保持等待直到活动运行结束 |
 | `allow` | 同一调度的运行可以重叠 |
+
+### 策略常量
+
+| 常量 | 取值 | 语义 |
+| --- | --- | --- |
+| `cron.MisfireFireNow` | `fire_now` | 立即补跑一次，然后从“现在”恢复常规序列 |
+| `cron.MisfireSkip` | `skip` | 跳到下一个未来触发，不补跑 |
+| `cron.ConcurrencyForbid` | `forbid` | 抑制重叠触发并记为 `skipped` |
+| `cron.ConcurrencyAllow` | `allow` | 允许同一调度的运行重叠 |
 
 ### 暂停 / 恢复语义
 
@@ -162,6 +196,19 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | `error` | `string` | 失败消息（截断）；成功为空 |
 | `missedCount` | `int` | 一条 `missed` 行覆盖的次数 |
 
+### 运行状态
+
+| 常量 | 取值 | 含义 |
+| --- | --- | --- |
+| `cron.RunStatus` | `string` | 生命周期状态类型 |
+| `cron.RunRunning` | `running` | 已被认领、正在执行（或即将执行） |
+| `cron.RunSucceeded` | `succeeded` | 处理器返回 nil |
+| `cron.RunFailed` | `failed` | 处理器返回错误、panic 或超时 |
+| `cron.RunMissed` | `missed` | 错触策略判定这些次数永远不会执行 |
+| `cron.RunSkipped` | `skipped` | 被 `ConcurrencyForbid` 抑制的触发 |
+| `cron.RunAbandoned` | `abandoned` | 执行器心跳丢失 |
+| `cron.RunCanceled` | `canceled` | 优雅停机时中断 |
+
 `run_retention` 会（每小时清扫）删除超窗的终态流水账行；0 表示永久保留——
 删除流水账严格 opt-in。
 
@@ -191,6 +238,15 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | --- | --- | --- |
 | `vef.cron.run.failed` | `cron.RunFailedEvent` | `runId`、`scheduleName`、`jobName`、`scheduledAtUnixMs`、`nodeId`、`error` |
 | `vef.cron.run.abandoned` | `cron.RunAbandonedEvent` | `runId`、`scheduleName`、`jobName`、`scheduledAtUnixMs`、`nodeId` |
+
+### 事件构造器与常量
+
+| API | 契约 |
+| --- | --- |
+| `cron.EventTypeRunFailed` | 主题常量 `vef.cron.run.failed` |
+| `cron.EventTypeRunAbandoned` | 主题常量 `vef.cron.run.abandoned` |
+| `cron.NewRunFailedEvent(run *Run) *RunFailedEvent` | 从流水账记录构造 run-failed 事件 |
+| `cron.NewRunAbandonedEvent(run *Run) *RunAbandonedEvent` | 从流水账记录构造 run-abandoned 事件 |
 
 ## RPC 资源
 
@@ -343,6 +399,18 @@ code 表达。
 | `2704` | `ErrJobNotRegistered` | 调度引用了本节点未注册的任务名 |
 | `2705` | `ErrStoreDisabled` | `vef.cron.store.enabled = false` 时调用存储操作 |
 | `2706` | `ErrScheduleInvalid(reason)` | 非触发器的声明故障（名称、窗口、超时、参数、策略词汇） |
+
+### 错误码常量
+
+| 常量 | 码 | 含义 |
+| --- | --- | --- |
+| `cron.ErrCodeScheduleNotFound` | 2700 | 调度不存在 |
+| `cron.ErrCodeScheduleExists` | 2701 | 调度名已占用 |
+| `cron.ErrCodeScheduleDisabled` | 2702 | 对暂停中的调度手动触发 |
+| `cron.ErrCodeTriggerInvalid` | 2703 | 触发器校验失败 |
+| `cron.ErrCodeJobNotRegistered` | 2704 | 调度引用了本节点未注册的任务名 |
+| `cron.ErrCodeStoreDisabled` | 2705 | `vef.cron.store.enabled = false` 时调用存储操作 |
+| `cron.ErrCodeScheduleInvalid` | 2706 | 非触发器的声明故障（名称、窗口、超时、参数、策略词汇） |
 
 ## 配置
 

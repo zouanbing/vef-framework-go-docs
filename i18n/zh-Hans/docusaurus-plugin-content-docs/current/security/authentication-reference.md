@@ -8,7 +8,7 @@ sidebar_position: 2
 
 | API 组 | 公开 surface |
 | --- | --- |
-| principal | `Principal`, `PrincipalType`, `NewUser`, `NewExternalApp`, `PrincipalSystem`, `PrincipalAnonymous`, `SetUserDetailsType`, `SetExternalAppDetailsType` |
+| principal | `Principal`, `PrincipalType`, `NewUser`, `NewExternalApp`, `PrincipalSystem`, `PrincipalAnonymous`, `SetUserDetailsType`, `SetExternalAppDetailsType`, `IsReserved` |
 | JWT | `JWT`, `JWTConfig`, `JWTClaimsBuilder`, `JWTClaimsAccessor`, `NewJWT`, `GenerateSecret`, token type constants, `DefaultJWTAudience`, `DefaultJWTSecret`, `JWTIssuer` |
 | auth manager | `Authentication`, `AuthTokens`, `Authenticator`, `AuthManager`, `TokenGenerator`, `UserLoader`, `ExternalAppLoader`, `ExternalAppConfig`, `PasswordDecryptor` |
 | challenge token | `ChallengeProvider`, `ChallengeState`, `ChallengeTokenStore`, `NewMemoryChallengeTokenStore`, `NewRedisChallengeTokenStore`, `NewJWTChallengeTokenStore` |
@@ -49,6 +49,15 @@ audience，校验存在时的 `iat`、强制要求 `exp`，并使用 10 秒 leew
 | roles | `rls` |
 | details | `det` |
 
+JWT 签名始终使用 `HS256`（在 JWT 术语中即 `HMAC-SHA256`）。`security/signature.go`
+中的签名认证器支持三种算法：
+
+| Algorithm | Constant | 上下文 |
+| --- | --- | --- |
+| `HMAC-SHA256` | `SignatureAlgHmacSHA256` | 签名认证器（默认） |
+| `HMAC-SHA512` | `SignatureAlgHmacSHA512` | 签名认证器 |
+| `HMAC-SM3` | `SignatureAlgHmacSM3` | 签名认证器 |
+
 内置 access token 和 refresh token generator 会把 subject 写成 `id@name`。
 `JWTTokenAuthenticator` 会直接从这个 subject 重建用户 principal，不查数据库。
 `JWTRefreshAuthenticator` 也要求 `id@name`，但会取其中的 `id` 调用
@@ -72,6 +81,13 @@ audience，校验存在时的 `iat`、强制要求 `exp`，并使用 10 秒 leew
 反序列化后 `details` 为 `nil`。内置特殊 principal 是 `PrincipalSystem`
 （`type: "system"`，id `system`，name `系统`）和 `PrincipalAnonymous`
 （`type: "user"`，id `anonymous`，name `匿名`）。
+
+`Principal.IsReserved()` 用于判断一个 principal 是否声明了框架内部身份。当
+principal 类型为 `system`，或 principal `ID` 等于 `orm.OperatorSystem`
+（`"system"`）、`orm.OperatorCronJob`（`"cron_job"`）时返回 `true`。
+`PrincipalAnonymous` 故意不被视为保留身份，因为它表示身份缺失，只有 `public`
+认证策略才会合法地产出。框架在认证边界、令牌签发和挑战流程中强制该不变量；
+参见[认证：保留身份](./authentication#保留身份)。
 
 ## Challenge providers
 
@@ -120,6 +136,28 @@ principal type——`system`、空值与未知类型一律以 `ErrTokenInvalid` 
 （携带框架内部身份的挑战 token 不可能有合法来源），解析出的 principal 若
 `IsReserved()` 同样被拒绝。
 
+### Challenge Claim Keys
+
+`JWTChallengeTokenStore` 将挑战状态编码为紧凑 JWT claim。以下 claim key
+同时出现在挑战 token 和标准 `JWTClaimsBuilder`/`JWTClaimsAccessor` 中：
+
+| Claim Key | Constant | 内容 |
+| --- | --- | --- |
+| `det` | （标准 JWT claim） | 用户详情（`claimDetails`）——应用自定义载荷，同时存在于 access token 和 challenge token 中 |
+| `pnd` | `ClaimChallengePending` | 待处理的挑战类型，按评估顺序排列——尚未评估的剩余类型 |
+| `pnm` | `ClaimChallengePrincipalName` | principal 显示名——作为独立 claim 存储，因为 subject claim（`sub`）只携带 principal ID |
+| `ptp` | `ClaimChallengePrincipalType` | principal 类型——`user` 或 `external_app`；挑战 token 解析时拒绝 `system` |
+| `rls` | （标准 JWT claim） | 用户角色（`claimRoles`）——在 access token 和 challenge token 中均携带 |
+| `rsd` | `ClaimChallengeResolved` | 已解决的挑战类型，按解决顺序排列——已完成的类型 |
+
+标准 JWT claim（`jti`、`sub`、`iss`、`aud`、`iat`、`nbf`、`exp`、`typ`）
+由 `JWT.Generate` 设置，由 `JWT.Parse` 校验，issuer 为 `JWTIssuer`（`vef`），
+audience 为 `DefaultJWTAudience`（`vef-app`），10 秒 `leeway`，`HS256` 签名。
+
+挑战 token 携带 `typ: "challenge"`，在 `ChallengeTokenExpires`（`5m`）后过期。
+`sub` claim 仅保存 principal ID；`pnm` 保存显示名。`det` 和 `rls` 与标准
+access token claim 一致，这样挑战流程无需数据库查询即可重建 principal。
+
 challenge provider 会按 `Order()` 升序排序。内置 convenience provider 的顺序是：
 TOTP 为 `100`，SMS 为 `200`，email 为 `300`，password change 为 `400`，
 department selection 为 `500`。未注册的 provider，或者 `Evaluate(...)`
@@ -146,9 +184,16 @@ delivered-code helper 会把 `OTPCodeStore` 和 `OTPCodeDelivery` 组合起来�
 常量是 `PasswordChangeReasonFirstLogin`（`first_login`）和
 `PasswordChangeReasonExpired`（`expired`）。具体 provider
 类型是 `PasswordChangeChallengeProvider`。`NewDepartmentSelectionChallengeProvider` 使用
-`DepartmentLoader` 与 `DepartmentSelector`；空部门列表会跳过 challenge，resolve 时要求
-传入 department ID 字符串。`DepartmentSelectionChallengeData` 会序列化为
-`departments` 和可选 `meta`；每个 `DepartmentOption` 会序列化为 `id` 和 `name`。
+`DepartmentLoader` 与 `DepartmentSelector`；resolve 时要求传入 department ID
+字符串。`DepartmentLoader.LoadDepartments` 返回
+`*DepartmentSelectionChallengeData`，让宿主同时控制可选选项和挑战级元数据。
+返回 nil 或 data 中没有部门都会跳过该 challenge。
+
+`DepartmentSelectionChallengeData` 会序列化为 `departments` 和可选
+`meta`；每个 `DepartmentOption` 会序列化为 `id`、`name` 和可选 `meta`。
+loader 的完整载荷会被原样转发——框架不会重建它，因此每个选项的 `Meta`（所
+属组织、用于树渲染的 parent id）和挑战级 `Meta`（组织树、默认选择、分组定
+义）都会到达客户端。两个层级框架都不会读取、校验或持久化。
 
 这些 challenge 构造器属于 wiring-time API。`NewOTPChallengeProvider` 在缺少
 `ChallengeType`、`Evaluator` 或 `Verifier` 时会 panic。
@@ -214,7 +259,7 @@ code——见[登录加固](./login-hardening)）：
 | `1004` | `ErrCodeTokenNotValidYet` | `ErrTokenNotValidYet` | `401` |
 | `1005` | `ErrCodeTokenInvalidIssuer` | `ErrTokenInvalidIssuer` | `401` |
 | `1006` | `ErrCodeTokenInvalidAudience` | `ErrTokenInvalidAudience` | `401` |
-| `1007` | `ErrCodePrincipalInvalid` | `ErrPrincipalInvalid(message)` | `401` |
+| `1007` | `ErrCodePrincipalInvalid` | `ErrPrincipalInvalid(message)`、`ErrReservedPrincipal` | `401` |
 | `1008` | `ErrCodeCredentialsInvalid` | `ErrCredentialsInvalid(message)` | `401` |
 | `1009` | `ErrCodeAppIDRequired` | `ErrAppIDRequired` | `401` |
 | `1010` | `ErrCodeTimestampRequired` | `ErrTimestampRequired` | `401` |
@@ -268,6 +313,21 @@ code——见[登录加固](./login-hardening)）：
 `ErrMessageCredentialsFormatInvalid`、`ErrMessageExternalAppLoaderNotImplemented`、
 `ErrMessageUnauthenticated`、`ErrMessageUnsupportedAuthenticationType`、
 `ErrMessageUserInfoLoaderNotImplemented` 和 `ErrMessageUserLoaderNotImplemented`。
+
+### Error Message Constants
+
+`security` 包为需要直接构造错误的调用方暴露了 i18n message ID 常量
+（模板参数、基于 factory 的 `result.Err`、Fiber 错误映射等场景）：
+
+| Constant | Message ID | 触发场景 |
+| --- | --- | --- |
+| `ErrMessageUnauthenticated` | `security_unauthenticated` | `ErrUnauthenticated`——无 bearer token 时返回的 sentinel |
+| `ErrMessageExternalAppLoaderNotImplemented` | `security_external_app_loader_not_implemented` | `SignatureAuthenticator.Authenticate` 在 `ExternalAppLoader` 为 nil 时 |
+| `ErrMessageCredentialsFormatInvalid` | `security_credentials_format_invalid` | `SignatureAuthenticator.Authenticate` 在 credentials 类型不是 `*SignatureCredentials` 时 |
+| `ErrMessageUnsupportedAuthenticationType` | `security_unsupported_authentication_type` | `AuthManager.Authenticate` 在无 authenticator 支持给定的 `type` 时 |
+| `ErrMessageUserLoaderNotImplemented` | `security_user_loader_not_implemented` | `JWTRefreshAuthenticator.Authenticate` 在 `UserLoader` 为 nil 时 |
+| `ErrMessageUserInfoLoaderNotImplemented` | `security_user_info_loader_not_implemented` | `AuthResource.GetUserInfo` 在 `UserInfoLoader` 为 nil 时 |
+| `ErrMessageChallengeResolveFailed` | `security_challenge_resolve_failed` | `resolve_challenge` 将 `ChallengeProvider.Resolve` 返回的裸 error 归一化为该错误 |
 
 ## RPC Resource: `security/auth`
 
@@ -341,7 +401,7 @@ code——见[登录加固](./login-hardening)）：
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `type` | `string` | challenge type 的 wire value，如 `totp`、`sms_otp`、`password_change`（见 [wire value 表](#challenge-providers)） |
-| `data` | `any` | provider 特定的展示数据；provider 不提供时缺失。OTP provider 返回 `{destination, meta?}`（`OTPChallengeData`）；部门选择返回 `{departments, meta?}` |
+| `data` | `any` | provider 特定的展示数据；provider 不提供时缺失。OTP provider 返回 `{destination, meta?}`（`OTPChallengeData`）；部门选择返回 `{departments, meta?}`，其中每个部门条目携带 `{id, name, meta?}`，顶层 `meta` 携带挑战级展示数据（如组织树） |
 | `required` | `bool` | 完成登录是否必须解决该 challenge |
 
 ```json
@@ -371,7 +431,8 @@ code——见[登录加固](./login-hardening)）：
   拒绝的 `type`，HTTP 400）、`1008`（凭证无效——未知用户、nil principal
   或空存储哈希、密码错误刻意返回同一响应，HTTP 401）、`1007`（保留或非
   法 principal，HTTP 401）、`1023`（触发暴力破解锁定，HTTP 429），以及
-  缺少必填字段时的通用校验错误 `1400`（HTTP 400）。
+  缺少必填字段时的通用校验错误 `1400`（HTTP 400）。保留身份的拒绝会记录
+  审计事件，但不计入锁定计数，因为错误在于认证器而非调用方。
 
 ### `refresh`
 

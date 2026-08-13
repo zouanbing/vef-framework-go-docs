@@ -69,7 +69,7 @@ enabled = true
 
 [[vef.event.routing]]
 pattern = "vef.storage.*"
-transports = ["outbox"]
+transports = ["outbox", "memory"]
 ```
 
 This is enough for the quick start because:
@@ -79,7 +79,7 @@ This is enough for the quick start because:
 - the resource is public, so no auth provider is needed yet
 - this example does not use any Redis-backed capability
 
-The two event blocks are required even though this example never touches storage: at startup the storage module verifies that `vef.storage.*` events route to a transactional transport, and the app refuses to boot otherwise. Enabling the outbox transport (it creates its own table automatically) satisfies that check; setting `vef.event.default_transport = "outbox"` instead of the routing rule works too.
+The two event blocks are required even though this example never touches storage: at startup the storage module verifies that `vef.storage.*` events route to a transactional transport, and the app refuses to boot otherwise. Enabling the outbox transport (it creates its own table automatically) satisfies that check, and the route lists `"memory"` — the outbox's default sink — alongside `"outbox"` so the events stay subscribable in-process; setting `vef.event.default_transport = "outbox"` instead of the routing rule works too.
 
 ## 3. Start the app
 

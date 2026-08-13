@@ -156,7 +156,7 @@ VEF 还支持启动期 handler factory。Factory 返回一个 handler 闭包，�
 | tagged dive field match | 继续搜索 `api:"dive"` 标记的嵌套字段 |
 | embedded field match | 搜索匿名嵌入字段 |
 
-这意味着你可以把自定义 service、repository、helper 作为资源字段放进去，再直接在 handler 参数里按类型拿到它们。
+这意味着你可以把自定义 service、repository、helper 作为资源字段放进去，再直接在 handler 参数里按类型拿到它们。如果字段类型带有 `WithLogger(logx.Logger)` 方法，框架会用请求 logger 调用它并注入返回的副本，让该服务在请求上下文中记录日志。
 
 ## 支持的 Factory 参数
 

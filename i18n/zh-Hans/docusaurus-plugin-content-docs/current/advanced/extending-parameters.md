@@ -11,7 +11,7 @@ sidebar_position: 2
 对于每个声明的参数类型，handler 参数解析器 manager 会按以下顺序尝试：
 
 1. **精确类型匹配**——在已注册的 `api.HandlerParamResolver` 中查找（下面列出的内置解析器，加上任何注册进 `group:"vef:api:handler_param_resolvers"` 的解析器）。
-2. **`api.Params` / `api.Meta` embedding**——如果该类型嵌入了这两个 sentinel 类型之一（或是被识别的 meta 类型），对应的请求分段会被解码并校验进这个类型。
+2. **`api.P` / `api.M` embedding**——如果该类型嵌入了这两个 sentinel 类型之一（或是被识别的 meta 类型，例如 `page.Pageable`），对应的请求分段会被解码并校验进这个类型。
 3. **Resource 字段兜底**——resource 结构体自身同类型的字段，让 handler 可以直接引用 resource 已经持有的依赖。
 
 如果都不匹配，解析会失败，该 handler 也就无法被适配。
@@ -31,8 +31,9 @@ Handler factory（在启动期构建 `fiber.Handler` 的函数，例如 `func (r
 | `mold.Transformer` | 固定值，启动时注入 |
 | `storage.Service` | 固定值，启动时注入 |
 | `datasource.Registry` | 固定值，启动时注入 |
-| `api.Params` | 从请求的 params 分段解码并校验 |
-| `api.Meta` | 从请求的 meta 分段解码并校验 |
+| `expression.Engine` | 固定值，启动时注入 |
+| `api.Params` | 请求的原始 params map，原样注入（不做类型化解码或校验） |
+| `api.Meta` | 请求的原始 meta map，原样注入（不做类型化解码或校验） |
 
 ### 内置 factory 参数解析器
 

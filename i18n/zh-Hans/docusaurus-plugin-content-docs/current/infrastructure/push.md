@@ -32,10 +32,16 @@ func (s *OrderService) NotifyApprovers(ctx context.Context, order *Order, approv
 | API | 契约 |
 | --- | --- |
 | `Push(ctx, message, targets...)` | 向所有目标选中的接收方投递（取并集，每个连接至多一次）。消息 ID 或时间为零值时自动填充。仅当消息或目标集非法时返回错误，从不因接收方错过而报错 |
-| `push.NewMessage(type, payload)` | 构建带生成 ID 与当前时间的消息 |
+| `push.NewMessage(type, payload)` | 构建带生成 ID 与当前时间的 `push.Message` |
+| `push.Message` | 投递给客户端的信封（`id`、`type`、`payload`、`time`） |
 | `push.ToUsers(userIDs...)` | 指向给定用户 ID 的在线连接 |
 | `push.ToRoles(roles...)` | 指向持有任一给定角色的连接（角色在握手时快照） |
 | `push.Broadcast()` | 指向所有在线连接 |
+| `push.Target` | 以数据形式表示的接收方选择器；同一次 `Push` 的多个 target 取并集 |
+| `push.TargetKind` | 接收方选择器的 string 判别值 |
+| `push.TargetUsers` | 按用户 ID 选择的选择器类型 |
+| `push.TargetRoles` | 按角色选择的选择器类型 |
+| `push.TargetBroadcast` | 选择所有在线连接的选择器类型 |
 
 错误：`push.ErrNoTarget`（目标集为空或 users/roles 选择器为空——投递给
 空集合永远是调用方缺陷）、`push.ErrTypeRequired`（客户端按 type 分发）、
@@ -43,7 +49,7 @@ func (s *OrderService) NotifyApprovers(ctx context.Context, order *Order, approv
 
 ### 消息信封
 
-每次推送是一个 JSON 文本帧：
+`push.Message` 是每次推送携带的信封，序列化后为一个 JSON 文本帧：
 
 | 字段 | 类型 | 含义 |
 | --- | --- | --- |

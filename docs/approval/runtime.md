@@ -99,7 +99,7 @@ The runtime state machine declares only these valid task transitions:
 | Property | Options |
 | --- | --- |
 | `RollbackType` | `RollbackNone` (`none`), `RollbackPrevious` (`previous`), `RollbackStart` (`start`), `RollbackAny` (`any`), `RollbackSpecified` (`specified`) |
-| `RollbackDataStrategy` | `RollbackDataClear` (`clear`, reset form), `RollbackDataKeep` (`keep`, preserve data) |
+| `RollbackDataStrategy` | `RollbackDataClear` (`clear`, reset form), `RollbackDataKeep` (`keep`, restore the form snapshot captured when the target node was entered — the latest one if the node was entered more than once) |
 
 Same-applicant handling uses `SameApplicantAction` with
 `SameApplicantSelfApprove` (`self_approve`), `SameApplicantAutoPass`
@@ -153,8 +153,9 @@ When a published version uses `StorageTable`, the framework exposes two public m
 | `FormTableColumn` | one generated column per form field or built-in column | `formTableId`, `columnName`, `columnType`, `isNullable`, `sourceFieldKey`, `sortOrder` |
 
 `FormTable` is the single source of truth for the DDL the framework generated:
-the engine consults it for idempotency before creating a table, and operators
-can map a version to its projection tables through it. `FormTable.SourceFieldKey`
+the publish path consults it so a republish never re-records a version's
+metadata (the DDL itself is idempotent via `CREATE TABLE IF NOT EXISTS`),
+and operators can map a version to its projection tables through it. `FormTable.SourceFieldKey`
 is `""` for the version's main projection table, or the owning table field's
 key for a detail-table child projection; `(versionId, sourceFieldKey)` is
 unique. `ColumnDataType` is the logical field-to-column vocabulary used by form
@@ -167,7 +168,7 @@ child table per detail-table (`table` kind) field:
 
 | Table | Physical name | Built-in columns | Field columns |
 | --- | --- | --- | --- |
-| main projection | `apv_form_<code>_<versionId>` (sanitized flow code, truncated to the 63-char identifier cap; falls back to `apv_form_<versionId>`) | `id` (PK), `instance_id` (UNIQUE), `created_at` last | one column per scalar field, in declared order |
+| main projection | `apv_form_<code>_<versionId>` (sanitized flow code, truncated so the composed name fits the 63-char identifier cap; falls back to `apv_form_<versionId>` when no budget or no readable code remains) | `id` (PK), `instance_id` (UNIQUE), `created_at` last | one column per scalar field, in declared order |
 | detail-table child | `apv_form_<versionId>__<fieldKey suffix>` | `id` (PK), `instance_id` (indexed, NOT unique), `row_index`, `created_at` last | one column per table-field column, in declared order |
 
 Every physical table and column name is validated as a safe SQL identifier
@@ -181,9 +182,10 @@ transaction so it commits or rolls back with the version's published state.
 At write time the projection is replace-never-append: the main table holds
 exactly one row per instance (backed by the `instance_id` UNIQUE constraint),
 a child table holds one row per detail line ordered by `row_index`, and each
-projection (at start and at every resubmit) deletes the instance's existing
-rows before inserting fresh ones — the tables reflect current form data, never
-an accumulating history.
+projection (whenever the instance's form data changes — start, resubmit, and
+any task action that mutates form data) deletes the instance's existing rows
+before inserting fresh ones — the tables reflect current form data, never an
+accumulating history.
 
 ## Instance Progress Projections
 
@@ -200,7 +202,7 @@ Progress and timeline enums are exported explicitly:
 
 | Enum | Constants |
 | --- | --- |
-| `TimelineEntryKind` | `TimelineEntryStart`, `TimelineEntryApproval`, `TimelineEntryHandle`, `TimelineEntryCC`, `TimelineEntryWithdraw`, `TimelineEntryTerminate` |
+| `TimelineEntryKind` | `TimelineEntryStart`, `TimelineEntryApproval`, `TimelineEntryHandle`, `TimelineEntryCC`, `TimelineEntryEnd`, `TimelineEntryWithdraw`, `TimelineEntryTerminate` |
 | `NodeVisitStatus` | `NodeVisitActive`, `NodeVisitPassed`, `NodeVisitRejected`, `NodeVisitReturned`, `NodeVisitCanceled` |
 | `NodeProgressStatus` | `NodeProgressPending`, `NodeProgressActive`, `NodeProgressPassed`, `NodeProgressRejected`, `NodeProgressReturned`, `NodeProgressCanceled` |
 

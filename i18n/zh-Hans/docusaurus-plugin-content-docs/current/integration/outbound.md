@@ -30,6 +30,13 @@ func (s *PatientService) LoadPatient(ctx context.Context, hospitalArea, patientI
 | `Invoke(ctx, contract string, input any, opts ...InvokeOption) (*Result, error)` | 按契约输入 Schema 校验输入、运行适配器脚本、校验输出，返回 `Result` |
 | `integration.Call[T](ctx, inv, contract, input, opts...) (T, error)` | `Invoke` 的类型化封装，经 JSON 往返把输出解码为 `T` |
 
+### 调用类型
+
+| 符号 | 契约 |
+| --- | --- |
+| `InvokeConfig` | 从 `InvokeOption` 收集、由 `Invoker` 实现消费的设置 |
+| `NewInvokeConfig` | `NewInvokeConfig(opts ...InvokeOption) InvokeConfig` — 将选项解析为 `InvokeConfig` |
+
 ### 调用选项
 
 | 选项 | 行为 |
@@ -48,6 +55,12 @@ func (s *PatientService) LoadPatient(ctx context.Context, hospitalArea, patientI
 | `System() string` | 实际提供服务的系统编码 |
 | `Duration() time.Duration` | 调用耗时 |
 | `Cached() bool` | 输出是否来自响应缓存 |
+
+`Result` 由框架通过 `NewResult` 组装：
+
+| 符号 | 契约 |
+| --- | --- |
+| `NewResult` | `NewResult(output, system, duration, cached) *Result` — 为框架的 `Invoker` 实现组装 `Result` |
 
 ## 适配器脚本环境
 
@@ -84,7 +97,7 @@ const data = res.json();
 
 | 函数 | 行为 |
 | --- | --- |
-| `http.fetch(path, { method, headers, query, body, timeout, envelope })` | 完整请求形式 |
+| `http.fetch(path, { method, headers, query, body, timeout, envelope, redirect })` | 完整请求形式；`redirect` 仅支持默认的 `follow` 模式——`error` / `manual` 会被拒绝 |
 | `http.get(path, options?)` / `http.delete(path, options?)` | fetch 的语法糖 |
 | `http.post(path, body, options?)` / `http.put(...)` / `http.patch(...)` | 带请求体的语法糖 |
 

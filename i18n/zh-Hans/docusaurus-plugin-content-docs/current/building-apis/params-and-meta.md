@@ -25,11 +25,25 @@ VEF 把请求输入拆成两个部分：
 | 目标类型 | 解码来源 | 是否自动验证 | 常见用途 |
 | --- | --- | --- | --- |
 | 嵌入 `api.P` 的 typed struct | `params` | 是 | 业务 params |
-| 嵌入 `api.StrictP` 的 typed struct | `params` | 是 | 业务 params，拒绝结构体未声明的请求键（`Params.DecodeStrict`） |
 | 嵌入 `api.M` 的 typed struct | `meta` | 是 | typed meta |
 | `page.Pageable` | `meta` | 是 | 分页 |
 | `api.Params` | `params` | 否 | 原始动态 payload |
 | `api.Meta` | `meta` | 否 | 原始动态 meta |
+
+## 宽容的 Params 解码
+
+Params 解码默认是宽容的：目标结构体没有声明的请求键会被忽略，因此仍然发送已废弃字段的客户端也能继续工作。框架不会因为未知键而拒绝请求；`Params.Decode` 会直接丢弃它们。
+
+如需暴露这些未知键以便监控，请使用 `Params.DecodeReportingUnmapped`：
+
+```go
+unmapped, err := params.DecodeReportingUnmapped(&target)
+```
+
+它会返回目标结构体未声明的请求键的排序列表。嵌套键按路径报告（例如
+`trigger.at`）。框架的请求管道会按每个操作、每组键集合只记录一次，让拼写错误或已废弃字段可见，同时不会拒绝旧客户端的请求。
+
+框架不提供严格/拒绝模式：封闭的契约靠报告来体现，而不是靠返回 `400`。
 
 ## `api.P` 标记 Params 结构体
 
@@ -106,10 +120,13 @@ typed 请求控制信息就是这样注入的。
 
 | 输入来源 | 最终落点 | 说明 |
 | --- | --- | --- |
+| 路由 path 参数 | `params` | 操作路由模式中的路径占位符（例如 `:id`） |
 | query string | `params` | 读操作过滤条件或普通请求字段 |
 | `POST` / `PUT` / `PATCH` 的 JSON body | `params` | 写入 payload |
 | `POST` / `PUT` / `PATCH` 的 multipart 字段 | `params` | 包括上传文件 |
 | `X-Meta-*` headers | `meta` | 请求级控制参数；去掉前缀后的 key 会被转成小写 |
+
+路由还会在填充 `params` 前剔除保留 query 参数 `security.QueryKeyAccessToken`（`__accessToken`）——认证直接从请求上下文读取它，因此它不会进入业务参数空间。
 
 这意味着分页和排序并不会自动从 query string 塞进内置 meta helper 里。如果 handler 期望的是 `page.Pageable` 这类 meta 目标，调用方应该通过 `X-Meta-*` headers 或显式 typed meta 契约来提供。
 

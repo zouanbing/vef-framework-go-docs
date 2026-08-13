@@ -197,6 +197,9 @@ type CodeSetInspector interface {
 }
 ```
 
+`CodeSetInfo` 有 `CodeSet` 和 `Name` 字段。`CodeInfo` 有 `Code` 和 `Label`
+字段（`CodeInfo.Code` 是规范代码值，`CodeInfo.Label` 是其显示名称）。
+
 消费方对其做类型断言，缺失时优雅降级。
 [集成模块](../integration/code-maps#宿主码值目录)用它驱动码值映射编辑器的
 选择器，并校验码值映射的标识。

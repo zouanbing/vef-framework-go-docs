@@ -77,7 +77,7 @@ reply, err := model.Generate(ctx, messages,
 
 `NewOptions()` creates the default option accumulator; `Options.Apply(...)`
 folds functional options into it. Most application code passes options directly
-to `Generate`, `Stream`, `Run`, or `Invoke` instead of touching the accumulator.
+to `Generate`, `Stream`, or `Run` instead of touching the accumulator.
 `Apply` mutates and returns the same accumulator, applies options in argument
 order, and later options can overwrite fields set by earlier options.
 

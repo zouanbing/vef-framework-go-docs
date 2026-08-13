@@ -35,10 +35,16 @@ func (s *OrderService) NotifyApprovers(ctx context.Context, order *Order, approv
 | API | Contract |
 | --- | --- |
 | `Push(ctx, message, targets...)` | delivers the message to every recipient selected by the targets (their union, each connection at most once). A zero message ID or time is filled in. Returns an error only for an invalid message or target set, never for missed recipients |
-| `push.NewMessage(type, payload)` | builds a message with a generated ID and the current time |
+| `push.NewMessage(type, payload)` | builds a `push.Message` with a generated ID and the current time |
+| `push.Message` | the wire envelope delivered to clients (`id`, `type`, `payload`, `time`) |
 | `push.ToUsers(userIDs...)` | targets the live connections of the given user IDs |
 | `push.ToRoles(roles...)` | targets every connection whose principal holds at least one of the roles (snapshotted at handshake) |
 | `push.Broadcast()` | targets every live connection |
+| `push.Target` | recipient selector as data; multiple targets on one `Push` are unioned |
+| `push.TargetKind` | string discriminant for recipient selectors |
+| `push.TargetUsers` | selector kind for specific user IDs |
+| `push.TargetRoles` | selector kind for roles |
+| `push.TargetBroadcast` | selector kind for every live connection |
 
 Errors: `push.ErrNoTarget` (empty target set or empty users/roles selector —
 delivering to nobody is always a caller bug), `push.ErrTypeRequired`
@@ -47,7 +53,7 @@ target outside the vocabulary).
 
 ### Message envelope
 
-Every push is one JSON text frame:
+`push.Message` is the envelope that every push delivers. It serializes as one JSON text frame:
 
 | Field | Type | Meaning |
 | --- | --- | --- |

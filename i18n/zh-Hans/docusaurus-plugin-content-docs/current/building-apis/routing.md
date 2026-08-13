@@ -115,6 +115,16 @@ REST action 字符串支持：
 | action method token | 小写 HTTP verb | `get`、`post`、`put`、`delete`、`patch` |
 | action sub-resource | 可选的斜杠分段 kebab-case 路径 | `profile`、`admin/users`、`user-friends` |
 
+## 框架保留的 Query Key
+
+框架会保留一些 query key 用于自身 plumbing。REST 路由器在构建业务参数空间之前会先把它们剥离，因此它们不会出现在 `params` 中。
+
+| 保留 key | 用途 |
+| --- | --- |
+| `__accessToken` | 用于无法设置 `Authorization` 头的请求（例如浏览器 `<img src>` 或下载链接）传递 bearer token；认证层直接从 Fiber context 读取。 |
+
+由于这些 key 被框架占用，它们不会进入业务 handler，也不会被报告为未映射键。
+
 ## `params` 如何收集
 
 ### RPC
@@ -271,6 +281,41 @@ IP 认证通过 `security.IPWhitelistLoader` 解析命名白名单（默认实�
 | timeout | `30s` |
 | auth strategy | Bearer |
 | rate limit | `100` requests per `5 minutes` |
+
+## 请求 Body 传输编码
+
+对于 `/api` 表面的请求，客户端可以选择对请求 body 进行传输编码，让携带脚本或代码形态的 payload（集成适配器脚本、信封/认证脚本、`dry_run` body）能够穿过会对这些内容误报的中间件。编码会在调度器解析之前被解码回原始 JSON。
+
+客户端通过请求头启用：
+
+```http
+X-Body-Encoding: base64
+```
+
+或：
+
+```http
+X-Body-Encoding: gzip+base64
+```
+
+支持的值：
+
+| 值 | 含义 |
+| --- | --- |
+| `base64` | body 是原始 JSON 的 base64 |
+| `gzip+base64` | body 是原始 JSON 经 gzip 压缩后再 base64（解码顺序：先 base64，再 gunzip） |
+
+原生的 `Content-Encoding`（如 `gzip`、`br`、`deflate`、`zstd`）由 Fiber 自身解压；这个中间件只覆盖 Fiber 不认识的 base64 形式。
+
+解码发生在 content-type 检查和调度器之前，且仅在 `/api` 路径上生效。存储、内容哈希缓存和审计看到的都是原始 body。body 限制（`vef.app.body_limit`）作用于解码后的大小，防止解压炸弹超出限制。
+
+失败模式：
+
+| 情况 | 结果 |
+| --- | --- |
+| 不支持的 `X-Body-Encoding` 值 | `api.ErrUnsupportedBodyEncoding`（HTTP 400） |
+| base64 格式错误或 gzip 流损坏 | `api.ErrBodyDecodeFailed`（HTTP 400） |
+| 解码后的 body 超过配置限制 | `api.ErrBodyTooLarge`（HTTP 413） |
 
 ## 响应形态
 

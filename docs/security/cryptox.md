@@ -204,13 +204,29 @@ does the same for `ECDSACurve`.
 | SM2 | Asymmetric | ✅ | ✅ | Chinese (国密) |
 | SM4 | Symmetric | ✅ | ❌ | Chinese (国密) |
 
+## Integration Secret Cipher
+
+The integration engine (see [Integration](../integration/overview)) seals
+stored secrets with a symmetric cipher. The algorithm is configurable via
+`vef.integration.secret_algorithm`:
+
+| Value | Cipher | Mode |
+| --- | --- | --- |
+| `"aes"` (default) | AES | GCM |
+| `"sm4"` | SM4 | GCM |
+
+The config key is `config.IntegrationSecretAlgorithm`; its constants are
+`config.IntegrationSecretAlgorithmAES` (`"aes"`) and
+`config.IntegrationSecretAlgorithmSM4` (`"sm4"`). An unrecognized value fails
+config validation with `config.ErrInvalidIntegrationSecretAlgorithm`.
+
 ## Options, Constants, and Key Helpers
 
 | Area | Public API |
 | --- | --- |
 | AES modes/options | `AESMode`, `AesModeGcm`, `AesModeCbc`, `WithAESMode(mode)`, `WithAESIv(iv)` |
 | RSA modes/options | `RSAMode`, `RSASignMode`, `RsaModeOAEP`, `RsaModePKCS1v15`, `RsaSignModePSS`, `RsaSignModePKCS1v15`, `WithRSAMode(mode)`, `WithRSASignMode(mode)` |
-| SM4 options | `WithSM4Iv(iv)` |
+| SM4 modes/options | `SM4Mode`, `Sm4ModeGcm`, `Sm4ModeCbc`, `WithSM4Mode(mode)`, `WithSM4Iv(iv)` |
 | ECDSA curves | `ECDSACurve`, `EcdsaCurveP224`, `EcdsaCurveP256`, `EcdsaCurveP384`, `EcdsaCurveP521` |
 | ECIES curves | `ECIESCurve`, `EciesCurveP256`, `EciesCurveP384`, `EciesCurveP521`, `EciesCurveX25519` |
 | key helpers | `GenerateECDSAKey(curve)`, `GenerateECIESKey(curve)` |

@@ -20,10 +20,10 @@ API groups covered in this guide:
 | resource and kind | `api.Resource`, `api.Kind`, `api.KindRPC`, `api.KindREST`, `api.ValidateActionName(action, kind) error`, `api.NewRPCResource(name, opts...)`, `api.NewRESTResource(name, opts...)`, `api.WithVersion(v)`, `api.WithAuth(config)`, `api.WithOperations(specs...)` |
 | engine and routing extension | `api.Engine`, `api.RouterStrategy`, `api.Middleware` |
 | operations | `api.OperationSpec`, `api.Operation`, `api.RateLimitConfig`, `api.OperationsProvider`, `api.OperationsCollector` |
-| request model | `api.Identifier`, `api.Request`, `api.Params`, `api.Meta`, `api.P`, `api.StrictP`, `api.M` |
+| request model | `api.Identifier`, `api.Request`, `api.Params`, `api.Meta`, `api.P`, `api.M` |
 | auth | `api.AuthConfig`, `api.Public()`, `api.BearerAuth()`, `api.SignatureAuth()`, `api.IPAuth(...)`, `api.APIKeyAuth(...)`, `api.HTTPBasicAuth()`, `api.AuthStrategy`, `api.AuthStrategyRegistry` |
 | handler extension | `api.HandlerResolver`, `api.HandlerAdapter`, `api.HandlerParamResolver`, `api.FactoryParamResolver` |
-| audit, headers, versions, errors | `api.AuditEvent`, `api.SubscribeAuditEvent`, `api.HeaderXMetaPrefix`, `api.HeaderXTimestamp`, `api.HeaderXNonce`, `api.HeaderXSignature`, `api.HeaderXAppID`, `api.VersionV1`, `api.VersionV9`, `api.ErrInvalidRequestParams`, `api.ErrInvalidRequestMeta`, `api.ErrInvalidParamsType`, `api.ErrInvalidMetaType` |
+| audit, headers, versions, errors | `api.AuditEvent`, `api.SubscribeAuditEvent`, `api.HeaderXMetaPrefix`, `api.HeaderXTimestamp`, `api.HeaderXNonce`, `api.HeaderXSignature`, `api.HeaderXAppID`, `api.HeaderXBodyEncoding`, `api.VersionV1`..`api.VersionV9`, `api.ErrInvalidRequestParams`, `api.ErrInvalidRequestMeta`, `api.ErrInvalidParamsType`, `api.ErrInvalidMetaType`, `api.ErrUnsupportedBodyEncoding`, `api.ErrBodyDecodeFailed`, `api.ErrBodyTooLarge` |
 
 ## Architecture
 
@@ -89,11 +89,21 @@ resource := api.NewRPCResource("sys/user",
 
 ### Resource Options
 
+`api.ResourceOption` is the option function type accepted by the resource
+constructors:
+
 | Option | Description |
 | --- | --- |
-| `api.WithVersion(v)` | Override the engine's default version (e.g., `"v2"`) |
+| `api.WithVersion(v)` | Override the engine's default version; `v` can be a literal matching `^v\d+$` (e.g., `"v2"`) or a constant such as `api.VersionV2` |
 | `api.WithAuth(config)` | Set resource-level authentication |
 | `api.WithOperations(specs...)` | Provide operation specs directly |
+
+Version constants are provided for the reserved ladder `api.VersionV1` through
+`api.VersionV9`. `api.VersionV1` is the framework default; `api.VersionV2`,
+`api.VersionV3`, `api.VersionV4`, `api.VersionV5`, `api.VersionV6`,
+`api.VersionV7`, `api.VersionV8`, and `api.VersionV9` are convenience
+constants for declaring higher API versions on a resource. Any literal
+matching `^v\d+$` is also accepted.
 
 `api.NewRPCResource` and `api.NewRESTResource` validate the resource name,
 version, and any specs passed through direct `api.WithOperations(...)` at
@@ -156,7 +166,7 @@ Operation defaulting rules:
 | `Timeout` | non-positive values use the engine default, which is `30s` unless overridden |
 | `Public` | `true` resolves auth to `api.Public()` before resource/default auth |
 | `RequiredPermission` | copied into auth options as the required permission token when non-empty |
-| `RateLimit` | nil uses the engine default — `vef.api.rate_limit` when configured, else `Max=100`, `Period=5m`; a custom `RateLimitConfig` replaces the default. An explicit `Max <= 0` does **not** disable limiting — the middleware falls back to the engine/config default for non-positive values |
+| `Operation.RateLimit` | nil uses the engine default — `vef.api.rate_limit` when configured, else `Max=100`, `Period=5m`; a custom `RateLimitConfig` replaces the default. An explicit `Max <= 0` does **not** disable limiting — the middleware falls back to the engine/config default for non-positive values |
 | `Handler` | RPC may infer from action when omitted; REST requires an explicit handler |
 
 Permission declarations are validated at registration and a violation fails
@@ -448,6 +458,9 @@ registers each resolved operation in `Route`.
 | `ErrInvalidActionName` | Action doesn't match kind-specific rules |
 | `ErrInvalidParamsType` | Params.Decode target is not a pointer to struct |
 | `ErrInvalidMetaType` | Meta.Decode target is not a pointer to struct |
+| `ErrUnsupportedBodyEncoding` | The `X-Body-Encoding` header value is not supported |
+| `ErrBodyDecodeFailed` | The encoded body could not be decoded (malformed base64 or corrupt gzip) |
+| `ErrBodyTooLarge` | The decoded body exceeds the configured body limit |
 
 `Params.Decode` and `Meta.Decode` require a pointer to a struct. Passing any
 other target returns `ErrInvalidParamsType` or `ErrInvalidMetaType`.

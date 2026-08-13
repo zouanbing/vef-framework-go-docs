@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Mapx
 
-The `mapx` package provides bidirectional conversion between Go structs and `map[string]any`, built on top of `github.com/go-viper/mapstructure/v2`. VEF overrides the upstream default tag — the framework uses `json` tags by default.
+The `mapx` package provides bidirectional conversion between Go structs and `map[string]any`, built on top of `github.com/go-viper/mapstructure/v2`. VEF overrides the upstream default tag — the framework uses `json` tags by default, and it also enables mapstructure squashing with the `inline` tag option.
 
 ## API Reference
 
@@ -38,13 +38,6 @@ The `mapx` package provides bidirectional conversion between Go structs and `map
 | `mapx.ErrCollectionSetUnsupportedTarget` | Sentinel for collection set element kinds without a conversion strategy |
 | `mapx.ErrJSONNumberNotInteger` | Sentinel for a fractional or exponent-form `json.Number` targeting an integer field |
 | `mapx.ErrJSONNumberOverflow` | Sentinel for a `json.Number` that does not fit the numeric target type |
-
-The decoder hook chain translates `json.Number` values produced by
-number-preserving JSON parsing: numeric targets get an exact digit
-parse with `encoding/json`-equivalent strictness, `json.Number` /
-`json.RawMessage` targets keep the literal, and every other target — most
-importantly `any` — sees `float64`, preserving the pre-`json.Number` runtime
-contract for dynamic consumers.
 
 ## Struct to Map
 
@@ -134,20 +127,60 @@ err = decoder.Decode(data)
 - `encoding.TextUnmarshaler` — any type that implements `UnmarshalText`
 - string → primitive coercions (int / uint / float / bool)
 
-Collection-set decoding is registered for `string`, signed integers, unsigned
-integers, `float32`, and `float64`. It rejects nil elements, string/numeric
+Collection-set decoding is registered for `string`, all signed and unsigned
+integer widths, and `float32`/`float64`. It rejects nil elements, string/numeric
 family mismatches, numeric overflow, fractional floats targeting integer sets,
 NaN or infinity targeting integer sets, and negative values targeting unsigned
 sets.
-
-`timex.DateTime` / `timex.Date` / `timex.Time` are defined as named types over `time.Time`; whether they hit the `time.Time` hook depends on mapstructure's underlying-type unwrapping. Verify case by case if you rely on automatic decoding for those types.
 
 `WithDecodeHook(myHook)` replaces the default composed hook. To extend the
 defaults, compose your hook with `mapx.DecoderHook` before passing it to
 `WithDecodeHook`.
 
-The composed default hook is also exported as `mapx.DecoderHook`, and metadata
-collection uses the exported alias `mapx.Metadata`.
+## Default Decoder Behavior
+
+The decoder `NewDecoder` creates has these VEF-specific defaults in addition to
+the hooks above:
+
+| Default | Value | Effect |
+| --- | --- | --- |
+| `TagName` | `json` | Reads `json` tags instead of the upstream `mapstructure` default. |
+| `Squash` | `true` | Squashing is enabled. |
+| `SquashTagOption` | `inline` | A struct tag option `inline` marks an embedded field for squashing. |
+| `MatchName` | `mapKey == lo.CamelCase(fieldName)` | Case-sensitive CamelCase matching. |
+
+An embedded struct can therefore be inlined with the `inline` tag option:
+
+```go
+type Embedded struct {
+    ID int `json:"id"`
+}
+
+type Parent struct {
+    Name string `json:"name"`
+    Embedded `json:"embedded,inline"`
+}
+
+out, err := mapx.FromMap[Parent](map[string]any{"name": "vef", "id": 1})
+// out.ID == 1, out.Name == "vef"
+```
+
+## json.Number Handling
+
+The default `DecoderHook` normalizes `json.Number` values produced by
+number-preserving JSON parsing (`json.Decoder.UseNumber`):
+
+- Typed numeric targets (`int`, `uint`, `float`, and named numeric types) get
+  an exact digit parse; fractional values or values outside the target range
+  return `ErrJSONNumberNotInteger` or `ErrJSONNumberOverflow`.
+- `json.Number` and `json.RawMessage` targets keep the literal digits.
+- `any` / `interface{}` targets, plus `map[string]any` and `[]any` containers,
+  see `float64`, preserving the pre-`json.Number` runtime contract for dynamic
+  consumers.
+
+This means a `map[string]any` decoded with `mapx` no longer leaks
+`json.Number` values into untyped fields, while typed fields retain exact
+precision even beyond `2^53`.
 
 ## Error Sentinels
 
@@ -158,7 +191,9 @@ collection uses the exported alias `mapx.Metadata`.
 | `ErrCollectionSetNilElement` | a nil element cannot be inserted into a collection set |
 | `ErrCollectionSetIncompatibleKind` | source value kind does not match the set element kind |
 | `ErrCollectionSetOverflow` | numeric source value overflows the target set element type |
-| `ErrCollectionSetNonInteger` | fractional float would lose data when decoded into an integer set |
+| `ErrCollectionSetNonInteger` | a fractional float would lose data when decoded into an integer set |
 | `ErrCollectionSetNotFinite` | NaN or infinity cannot be decoded into an integer set |
-| `ErrCollectionSetNegative` | negative value cannot decode into an unsigned set element |
+| `ErrCollectionSetNegative` | a negative value cannot decode into an unsigned set element |
 | `ErrCollectionSetUnsupportedTarget` | target set element kind has no conversion strategy |
+| `ErrJSONNumberNotInteger` | a `json.Number` with a fractional or exponent form cannot convert to an integer target |
+| `ErrJSONNumberOverflow` | a `json.Number` does not fit the target numeric type |

@@ -52,7 +52,7 @@ returns a new configured copy rather than mutating the receiver in place.
 ## Default Implementation
 
 Out of the box, every `logx.Logger` is backed by a `zap.SugaredLogger`
-(`go.uber.org/zap`) built inside `internal/logx`:
+(`go.uber.org/zap`) built inside the framework's internal logging implementation:
 
 | Aspect | Behavior |
 | --- | --- |
@@ -124,8 +124,9 @@ The request ID is carried as a logger *namespace* — log lines show
 ## Replacing Or Wrapping The Logger
 
 The concrete implementation is **not replaceable**. The root zap
-logger is a package-level value in `internal/logx`, framework packages
-capture their named children at package initialization, and `logx.Logger` is
+logger is a package-level value constructed once at process start,
+framework packages capture their named children at package initialization,
+and `logx.Logger` is
 not a DI-provided type — so there is no `fx.Decorate` point and no exported
 replacement hook. Framework-internal output (library, format, destination)
 is fixed.

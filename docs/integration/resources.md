@@ -55,7 +55,7 @@ never reaches an invocation.
 | `code` | `string` | Yes | unique contract code business code invokes |
 | `name` | `string` | Yes | display name |
 | `description` | `string` | No | free-text description |
-| `labels` | `object` (string→string) | No | host-owned selection metadata; keys must not contain dots, keys/values size-bounded (`ErrInvalidLabel`) |
+| `labels` | `object` (string→string) | No | host-owned selection metadata; keys must match `^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?$` (63 characters max), values are bounded to 256 characters (`ErrInvalidLabel`) |
 | `inputSchema` | JSON Schema object | No | self-contained draft 2020-12 schema for the invocation input; empty skips input validation |
 | `outputSchema` | JSON Schema object | No | self-contained schema for the adapter's return value; empty skips output validation |
 | `isEnabled` | `bool` | No | disabled contracts refuse invocation (`ErrContractDisabled`) |
@@ -125,14 +125,15 @@ parameter reference.
 | `request` | `string` | wrap script: receives the adapter's request as `request` (`{ method, path, headers, query, body }`) and returns the request to put on the wire; omitted fields keep the adapter's values |
 | `response` | `string` | unwrap script: receives the completed HTTP response as `response` (fetch Response shape); its return value is what the adapter's call yields |
 
-At least one of the two scripts is required when the envelope is present, and
-the system must have an HTTP transport (`ErrInvalidEnvelope`).
+When the envelope is present, at least one of the two scripts is required,
+each supplied script must compile, and the system must have an HTTP
+transport (`ErrInvalidEnvelope`).
 
 `DataSourceConfig`:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `kind` | `string` | database kind (same vocabulary as `vef.data_sources.type`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `oracle`) |
+| `kind` | `string` | database kind, required when the data source is present (`ErrInvalidDataSource`); same vocabulary as `vef.data_sources.type`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `oracle` |
 | `mode` | `string` | script write access: `read_only` (default; `sql.execute` throws) or `read_write` (enables `sql.execute`) |
 | `host` | `string` | server host |
 | `port` | `int` | server port |
@@ -188,8 +189,8 @@ unique and foreign keys guard the binding itself.
 
 ## `integration/route`
 
-Routing rules. The contract reference is validated at save time because the
-contract column carries the empty-string wildcard sentinel and has no
+Routing rules. Contract and system references are validated at save time —
+the contract column carries the empty-string wildcard sentinel and has no
 foreign key (`ErrInvalidRouteRef`).
 
 | Action | Permission | Input | Output |
@@ -249,12 +250,12 @@ its registered sets.
 | --- | --- | --- | --- |
 | `id` | `string` | update only | primary key |
 | `systemId` | `string` | Yes | the owning system |
-| `codeSet` | `string` | Yes | translated code set identifier (e.g. `gender`); constrained to the host catalog when one is registered |
+| `codeSet` | `string` | Yes | translated code set identifier (e.g. `gender`); constrained to the host catalog when one is registered; must match `^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$` with at most 128 characters (`ErrInvalidCodeMap`) |
 | `name` | `string` | Yes | display name |
 | `entries` | `CodeMapEntry[]` | No | mapping pairs (below); duplicate lookup values per side are rejected (`ErrInvalidCodeMap`) |
-| `onUnmapped` | `string` | No | `reject` (default when omitted — fail closed), `passthrough`, or `fallback` |
-| `fallbackCanonical` | any JSON value | No | value `toCanonical` yields for unmapped input under the `fallback` policy |
-| `fallbackExternal` | any JSON value | No | value `toExternal` yields for unmapped input under the `fallback` policy |
+| `onUnmapped` | `string` | No | `reject` (default when omitted — fail closed), `passthrough`, or `fallback`; any other value is rejected (`ErrInvalidCodeMap`) |
+| `fallbackCanonical` | any JSON value | No | value `toCanonical` yields for unmapped input under the `fallback` policy; required when `onUnmapped` is `fallback`, forbidden otherwise (`ErrInvalidCodeMap`) |
+| `fallbackExternal` | any JSON value | No | value `toExternal` yields for unmapped input under the `fallback` policy; required when `onUnmapped` is `fallback`, forbidden otherwise (`ErrInvalidCodeMap`) |
 | `isEnabled` | `bool` | No | disabled maps behave as missing (`ErrMissingCodeMap`) |
 
 `CodeMapEntry`:
@@ -270,7 +271,10 @@ its registered sets.
 
 Read-only view of the host's canonical code catalog, for the mapping
 editor's pickers. Present only in the sense that it degrades: without a
-`mold.CodeSetInspector` both operations answer `supported: false`.
+`mold.CodeSetInspector` both operations answer `supported: false`. With an
+inspector present, a catalog that fails to answer rejects both operations with
+`ErrCodeSetCatalogFailed` — as does a code map save whose identifier cannot be
+confirmed against it.
 
 | Action | Permission | Input | Output |
 | --- | --- | --- | --- |
@@ -478,13 +482,13 @@ Response (`RouteDiagnostics`):
 
 `kind` vocabulary:
 
-| Kind | Meaning |
-| --- | --- |
-| `dangling_adapter` | a contract-scoped route whose target system has no enabled adapter for that contract — invoking through this rule fails with `ErrAdapterNotFound` |
-| `wildcard_gap` | an enabled contract a wildcard (or default) route cannot serve because its target system has no enabled adapter for it. Informational |
-| `disabled_system` | an enabled route targeting a disabled system — invocations through it fail with `ErrSystemDisabled` |
-| `disabled_contract` | an enabled route scoped to a disabled contract — the rule can never match a successful invocation |
-| `uncovered_contract` | an enabled contract that resolves to no rule under a route key present in the table — invoking it with that key fails with `ErrRouteNotFound`. Informational when the key intentionally routes a subset |
+| Constant | Kind | Meaning |
+| --- | --- | --- |
+| `RouteFindingDanglingAdapter` | `dangling_adapter` | a contract-scoped route whose target system has no enabled adapter for that contract — invoking through this rule fails with `ErrAdapterNotFound` |
+| `RouteFindingWildcardGap` | `wildcard_gap` | an enabled contract a wildcard (or default) route cannot serve because its target system has no enabled adapter for it. Informational |
+| `RouteFindingDisabledSystem` | `disabled_system` | an enabled route targeting a disabled system — invocations through it fail with `ErrSystemDisabled` |
+| `RouteFindingDisabledContract` | `disabled_contract` | an enabled route scoped to a disabled contract — the rule can never match a successful invocation |
+| `RouteFindingUncoveredContract` | `uncovered_contract` | an enabled contract that resolves to no rule under a route key present in the table — invoking it with that key fails with `ErrRouteNotFound`. Informational when the key intentionally routes a subset |
 
 ## See also
 

@@ -56,6 +56,8 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | `cron.NewJobHandler(name, execute, opts...)` | adapts a function; `execute` receives the full `cron.Execution` |
 | `cron.NewTypedJobHandler[P](name, execute, opts...)` | decodes the schedule's params into `P` before the function runs; a decode failure journals the run as failed without invoking it |
 | `cron.WithDefaultSchedule(spec)` | ships a default schedule; the store seeds it at boot when absent. The spec's `Name` falls back to the job name |
+| `cron.DefaultScheduleProvider` | optional handler capability that ships a default schedule; the store seeds it at boot when absent |
+| `cron.JobHandlerOption` | option type accepted by `NewJobHandler` and `NewTypedJobHandler` |
 | `cron.Execution` | read-only view of the run: `RunID`, `ScheduleID`, `ScheduleName`, `JobName`, `ScheduledAt` (logical fire time), `Params` (raw JSON), `BindParams(v)` |
 
 A fire is claimed by at most one node, but a crashed run re-fires when the
@@ -72,6 +74,29 @@ constructors:
 | `cron.Expr(expr, timezone)` | `cron` | cron expression evaluated in an IANA timezone. 5-field, 6-field (leading seconds), and `@`-descriptors (`@daily`, `@every 90m`) are accepted. Empty timezone resolves to `UTC` — durable schedules never depend on a node's process-local zone (`"Local"` is rejected). The embedded tzdata keeps timezones working on zoneinfo-less deployments |
 | `cron.Every(duration)` | `interval` | fixed rate, minimum `1s` (`cron.MinInterval`). The rate is anchored to the schedule's start (`StartsAt`, else creation time), keeping the fire phase stable regardless of catch-ups or manual fires |
 | `cron.Once(at)` | `once` | a single fire |
+
+### Trigger kinds and constants
+
+| API | Contract |
+| --- | --- |
+| `cron.TriggerKind` | string discriminant for trigger types |
+| `cron.TriggerCron` | cron-expression trigger kind |
+| `cron.TriggerInterval` | fixed-rate trigger kind |
+| `cron.TriggerOnce` | one-shot trigger kind |
+| `cron.DefaultTimezone` | evaluation zone used when a cron trigger omits a timezone (`"UTC"`) |
+| `cron.MaxDurationMilliseconds` | largest whole-millisecond count a `time.Duration` can represent; rates/timeouts beyond it cannot round-trip |
+
+### Trigger validation errors
+
+| Error | Trigger |
+| --- | --- |
+| `cron.ErrTriggerKindUnknown` | the trigger kind is outside the `cron`, `interval`, `once` vocabulary |
+| `cron.ErrTriggerExprRequired` | a cron trigger was supplied without an expression |
+| `cron.ErrTriggerExprInvalid` | the cron expression could not be parsed |
+| `cron.ErrTriggerTimezoneInvalid` | the named IANA timezone could not be loaded |
+| `cron.ErrTriggerIntervalTooShort` | the fixed rate is below `cron.MinInterval` |
+| `cron.ErrTriggerIntervalTooLong` | the fixed rate exceeds `MaxDurationMilliseconds` |
+| `cron.ErrTriggerFireTimeRequired` | a one-shot trigger has no fire time |
 
 Fields not belonging to the selected kind are rejected
 (`ErrTriggerFieldsConflict`), as are unparsable expressions, unloadable
@@ -122,6 +147,15 @@ occurrence count).
 | --- | --- |
 | `forbid` (default) | a fire that would overlap a still-running run of the same schedule is suppressed and journaled as `skipped`. Recovery requests stay pending until the active run ends |
 | `allow` | runs of the same schedule may overlap |
+
+### Policy constants
+
+| Constant | Value | Semantics |
+| --- | --- | --- |
+| `cron.MisfireFireNow` | `fire_now` | run one catch-up fire immediately and resume the regular sequence from now |
+| `cron.MisfireSkip` | `skip` | advance to the next future fire without running |
+| `cron.ConcurrencyForbid` | `forbid` | suppress overlapping fires and journal them as `skipped` |
+| `cron.ConcurrencyAllow` | `allow` | allow overlapping runs of the same schedule |
 
 ### Pause / resume semantics
 
@@ -178,6 +212,19 @@ deletion — `scheduleName` and `jobName` are denormalized for that reason.
 | `error` | `string` | failure message, truncated; empty on success |
 | `missedCount` | `int` | occurrences a `missed` row covers |
 
+### Run statuses
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `cron.RunStatus` | `string` | lifecycle state type |
+| `cron.RunRunning` | `running` | a claimed fire that is executing (or about to) |
+| `cron.RunSucceeded` | `succeeded` | the handler returned nil |
+| `cron.RunFailed` | `failed` | the handler returned an error, panicked, or exceeded its timeout |
+| `cron.RunMissed` | `missed` | misfire handling decided the occurrences would never run |
+| `cron.RunSkipped` | `skipped` | a fire suppressed by `ConcurrencyForbid` |
+| `cron.RunAbandoned` | `abandoned` | the executor stopped heartbeating |
+| `cron.RunCanceled` | `canceled` | the run was interrupted by graceful shutdown |
+
 `run_retention` prunes terminal journal rows older than the window (hourly
 sweep); zero keeps rows forever — deletion of the journal is strictly opt-in.
 
@@ -208,6 +255,15 @@ correctness from them (the run journal is the durable truth).
 | --- | --- | --- |
 | `vef.cron.run.failed` | `cron.RunFailedEvent` | `runId`, `scheduleName`, `jobName`, `scheduledAtUnixMs`, `nodeId`, `error` |
 | `vef.cron.run.abandoned` | `cron.RunAbandonedEvent` | `runId`, `scheduleName`, `jobName`, `scheduledAtUnixMs`, `nodeId` |
+
+### Event constructors and constants
+
+| API | Contract |
+| --- | --- |
+| `cron.EventTypeRunFailed` | topic constant `vef.cron.run.failed` |
+| `cron.EventTypeRunAbandoned` | topic constant `vef.cron.run.abandoned` |
+| `cron.NewRunFailedEvent(run *Run) *RunFailedEvent` | builds a run-failed event from a journal record |
+| `cron.NewRunAbandonedEvent(run *Run) *RunAbandonedEvent` | builds a run-abandoned event from a journal record |
 
 ## RPC Resources
 
@@ -364,6 +420,18 @@ failure in the body code.
 | `2704` | `ErrJobNotRegistered` | schedule references a job name not registered on this node |
 | `2705` | `ErrStoreDisabled` | store operation while `vef.cron.store.enabled = false` |
 | `2706` | `ErrScheduleInvalid(reason)` | non-trigger spec fault (name, window, timeout, params, policy vocabulary) |
+
+### Error code constants
+
+| Constant | Code | Meaning |
+| --- | --- | --- |
+| `cron.ErrCodeScheduleNotFound` | 2700 | schedule lookup failed |
+| `cron.ErrCodeScheduleExists` | 2701 | schedule name already taken |
+| `cron.ErrCodeScheduleDisabled` | 2702 | manual trigger against a paused schedule |
+| `cron.ErrCodeTriggerInvalid` | 2703 | trigger validation failed |
+| `cron.ErrCodeJobNotRegistered` | 2704 | schedule references a job name not registered on this node |
+| `cron.ErrCodeStoreDisabled` | 2705 | store operation while `vef.cron.store.enabled = false` |
+| `cron.ErrCodeScheduleInvalid` | 2706 | non-trigger spec fault (name, window, timeout, params, policy vocabulary) |
 
 ## Configuration
 

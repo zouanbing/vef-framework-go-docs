@@ -245,6 +245,9 @@ employees, rowErrors, err := imp.Import(reader) // employees 直接是 []Employe
 
 exp := csv.NewTypedExporterFor[Employee]()
 buf, err := exp.Export(employees)               // 直接接受 []Employee
+
+// Excel 也有同样的 typed 包装器：
+// exp := excel.NewTypedExporterFor[Employee]()
 ```
 
 `TypedImporter[T]` / `TypedExporter[T]` 包裹底层的 `tabular.Importer` / `tabular.Exporter`。如需直接调用 `RegisterParser` / `RegisterFormatter`，可以使用 `TypedImporter.Inner` / `TypedExporter.Inner` 取出内部实例。如果被包装的 importer 返回的行元素类型与 `T` 不匹配，typed 包装器会返回 `ErrTypedRowMismatch`。
@@ -253,7 +256,11 @@ buf, err := exp.Export(employees)               // 直接接受 []Employee
 
 ## 动态 Map 用法
 
-动态列允许在运行期构造 schema，无需预先声明结构体。每列由 `tabular.ColumnSpec` 描述：
+动态列允许在运行期构造 schema，无需预先声明结构体。map 适配工厂为
+`csv.NewMapImporter(specs, mapOpts, opts...)`、`csv.NewMapExporter(specs, opts...)`、
+`excel.NewMapImporter(specs, mapOpts, opts...)`、`excel.NewMapExporter(specs, opts...)`；
+`mapOpts` 传 `nil` 表示不需要 `MapAdapter` 选项（如行校验器）。每列由
+`tabular.ColumnSpec` 描述：
 
 ```go
 import (
@@ -521,19 +528,72 @@ type ExportError struct {
 
 | 错误 | 触发场景 |
 | --- | --- |
-| `ErrDataMustBeSlice` | 导出参数不是切片 |
-| `ErrSchemaMismatch` | 元素类型与适配器 schema 不匹配（结构体 / map 不一致）|
-| `ErrUnknownColumn` | 调用方引用了 schema 中不存在的列 |
-| `ErrRequiredMissing` | 动态导入时 `Required` 单元格为空 |
-| `ErrNoDataRowsFound` | 经 skip-rows 与可选 header 处理后没有数据行 |
-| `ErrDuplicateHeaderName` | Header 行存在重复非空名，或动态 schema 中两列解析出同一个 name |
-| `ErrDuplicateColumnKey` | 动态 `ColumnSpec` 切片中有两个条目 `Key` 相同 |
-| `ErrUnsetField` | 结构体字段不可写（通常是未导出字段）|
-| `ErrMissingColumnKey` / `ErrMissingColumnType` | `ColumnSpec` 缺关键字段 |
-| `ErrTypedRowMismatch` | `TypedImporter[T]` / `TypedExporter[T]` 收到的元素类型不是 `T` |
-| `ErrUnsupportedType` | 默认 parser 被要求解析成一个它不认识的 Go 类型 |
+| `tabular.ErrDataMustBeSlice` | 导出参数不是切片 |
+| `tabular.ErrSchemaMismatch` | 元素类型与适配器 schema 不匹配（结构体 / map 不一致）|
+| `tabular.ErrUnknownColumn` | 调用方引用了 schema 中不存在的列 |
+| `tabular.ErrRequiredMissing` | 动态导入时 `Required` 单元格为空 |
+| `tabular.ErrNoDataRowsFound` | 经 skip-rows 与可选 header 处理后没有数据行 |
+| `tabular.ErrDuplicateHeaderName` | Header 行存在重复非空名，或动态 schema 中两列解析出同一个 name |
+| `tabular.ErrDuplicateColumnKey` | 动态 `ColumnSpec` 切片中有两个条目 `Key` 相同 |
+| `tabular.ErrUnsetField` | 结构体字段不可写（通常是未导出字段）|
+| `tabular.ErrMissingColumnKey` / `tabular.ErrMissingColumnType` | `ColumnSpec` 缺关键字段 |
+| `tabular.ErrTypedRowMismatch` | `TypedImporter[T]` / `TypedExporter[T]` 收到的元素类型不是 `T` |
+| `tabular.ErrUnsupportedType` | 默认 parser 被要求解析成一个它不认识的 Go 类型 |
 
 `excel.ErrSheetIndexOutOfRange` 是唯一的驱动专属 sentinel——见 [Excel → 错误处理](./excel#错误处理)。
+
+## CSV 选项
+
+### 导入选项
+
+`csv.ImportOption` 配置 CSV 导入器行为：
+
+| 选项 | 行为 |
+| --- | --- |
+| `csv.WithImportDelimiter(delimiter)` | 设置字段分隔符（默认：逗号）。 |
+| `csv.WithComment(comment)` | 设置注释字符；以此 rune 开头的行会被跳过。 |
+| `csv.WithSkipRows(n)` | 跳过前 n 行再读取表头或数据。负值会被钳制为零。 |
+| `csv.WithoutHeader()` | 将第一个非跳过行视为数据而非表头。列按 schema 顺序映射到源位置。 |
+| `csv.WithoutTrimSpace()` | 禁用单元格值首尾空白修剪。默认启用修剪。 |
+
+### 导出选项
+
+`csv.ExportOption` 配置 CSV 导出器行为：
+
+| 选项 | 行为 |
+| --- | --- |
+| `csv.WithExportDelimiter(delimiter)` | 设置导出字段分隔符（默认：逗号）。 |
+| `csv.WithoutWriteHeader()` | 在导出的 CSV 输出中抑制表头行。 |
+| `csv.WithCRLF()` | 启用 Windows 风格 CRLF 换行符，用于兼容旧系统。 |
+
+### CSV 驱动内部行为
+
+CSV 导入器在设置 `FieldsPerRecord = -1` 后用标准库 reader 的 `ReadAll()` 把整份文件读入内存，
+因此可容忍列数可变的行。当启用 trim 时，首尾空白由共享的 tabular 层处理（CSV 读取器自身的
+`TrimLeadingSpace` 未使用）。CSV 导出器写完表头和数据后会 flush 写入器；flush 失败会返回
+`flush CSV writer: ...`。
+
+## Excel 选项
+
+### 导入选项
+
+`excel.ImportOption` 配置 Excel 导入器行为：
+
+| 选项 | 行为 |
+| --- | --- |
+| `excel.WithImportSheetName(name)` | 按名称选择要导入的工作表。设置后，优先级高于 `WithImportSheetIndex`。 |
+| `excel.WithImportSheetIndex(index)` | 按 0-based 索引选择要导入的工作表（默认：0）。当 `WithImportSheetName` 设置时被忽略。 |
+| `excel.WithSkipRows(n)` | 跳过前 n 行再读取表头或数据。负值会被钳制为零。 |
+| `excel.WithoutHeader()` | 将第一个非跳过行视为数据而非表头。 |
+| `excel.WithoutTrimSpace()` | 禁用单元格值首尾空白修剪。默认启用修剪。 |
+
+### 导出选项
+
+`excel.ExportOption` 配置 Excel 导出器行为：
+
+| 选项 | 行为 |
+| --- | --- |
+| `excel.WithSheetName(name)` | 设置工作表名称（默认：`"Sheet1"`）。 |
 
 ## CRUD 集成
 

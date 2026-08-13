@@ -72,12 +72,11 @@ var Module = vef.Module(
 
 - 在指定路径提供 `index.html`
 - 在 `Path` 前缀下提供 `/static/*` 静态资源
-- 打开 `etag`
-- 通过 `helmet` 添加安全头
-- 对同一路径前缀下的未知 GET 路由自动 fallback 回 SPA 入口
+- 打开 `etag` 缓存，并通过 `helmet` 添加安全头
+- 执行 SPA 风格的 fallback 路由：挂载路径下其余 GET 请求会被重写到 SPA 入口并返回 `index.html`
 - 在 fallback 之前遵守 `ExcludePaths`，让被排除的前缀保留正常路由或 404 行为
 
-它的中间件顺序是 `1000`，因此会在 API 路由之后执行。
+它的 `Order()` 是 `1000`，因此会在 API 路由之后执行。当部署模型需要时，这让一个 VEF 进程可以同时承载 API 与 SPA shell。
 
 ## 排除路径
 

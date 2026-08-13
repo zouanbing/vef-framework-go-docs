@@ -38,8 +38,8 @@ Common environment keys include:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `name` | `string` | application name; also feeds defaults such as JWT audience generation |
-| `port` | `uint16` | HTTP server port |
+| `name` | `string` | application name; defaults to `vef-app`; used for JWT audience, Redis push-relay channel namespace, and similar |
+| `port` | `uint16` | HTTP server port; required — no default |
 | `body_limit` | `string` | Fiber body limit, for example `10mib`; defaults to `32mib` when omitted |
 | `trusted_proxies` | `[]string` | proxy IPs or CIDR ranges trusted to set `X-Forwarded-For`; empty means forwarded headers from untrusted clients are ignored |
 
@@ -156,6 +156,7 @@ Runtime note:
 | `allow_public_uploads` | `bool` | allows clients to request public uploads; default false |
 | `sweep_interval` | `duration` | expired-claim sweep interval, default 5m |
 | `sweep_batch_size` | `int` | maximum expired claims processed per sweep, default 200 |
+| `orphan_retention` | `duration` | retention for finalized-but-never-adopted uploads; default 0 disables reclamation |
 | `delete_worker_interval` | `duration` | pending-delete worker polling interval, default 5m |
 | `delete_batch_size` | `int` | rows leased by one delete-worker tick, default 100 |
 | `delete_concurrency` | `int` | concurrent object deletions per worker tick, default 8 |
@@ -165,7 +166,8 @@ Runtime note:
 Runtime note:
 
 - omitting `provider` selects in-memory storage and logs a warning; objects are lost on restart
-- `vef.storage.auto_migrate = true` runs the idempotent storage migration and checks `sys_storage_upload_claim`, `sys_storage_upload_part`, and `sys_storage_pending_delete`
+- `vef.storage.auto_migrate = true` runs the idempotent storage migration and checks `sys_storage_upload_claim`, `sys_storage_upload_part`, `sys_storage_pending_delete`, and `sys_storage_file`
+- `orphan_retention` is deliberately not defaulted; zero disables reclamation of finalized-but-never-adopted uploads
 - `filesystem.root` defaults to `./storage`
 - `minio.bucket` defaults to `minio.bucket`, then `vef.app.name`, then `vef-app`
 - upload-flow and delete-worker tunables have defaults in the framework; use the `StorageConfig` `Effective...` accessors when application code needs the resolved values
@@ -200,6 +202,7 @@ Runtime note:
 | `form_snapshot_retention` | `duration` | `apv_form_snapshot` retention, default 90 days |
 | `urge_record_retention` | `duration` | `apv_urge_record` retention, default 30 days |
 | `cc_record_retention` | `duration` | retention for read `apv_cc_record` rows, default 90 days |
+| `form_data_max_bytes` | `int` | cap on the JSON-encoded form payload in bytes; default 65536 (64 KiB). Zero selects the default; a negative value is rejected at startup with `ErrInvalidApprovalFormDataMaxBytes` |
 | `business_binding.consistency` | `synchronous \| eventual` | business-table projection mode; default `synchronous` (failure rolls the approval action back). `eventual` commits desired state and lets the worker converge |
 | `business_binding.scan_interval` | `duration` | eventual projection worker cadence, default `10s` |
 | `business_binding.batch_size` | `int` | projections claimed per scan, default `100` |
@@ -273,6 +276,7 @@ Runtime note:
 | `async_workers` | `int` | async worker count, default `4` |
 | `publish_timeout` | `duration` | per-transport publish timeout, default `5s` |
 | `transports.memory.*` | — | `queue_size` default `1024`, `full_policy` default `error`, `publish_timeout` default unset/no timeout and only applies when `full_policy = "block"` |
+| `transports.tx_memory.*` | — | `enabled` default `false`, `queue_size`, `full_policy`, `publish_timeout` — same knobs as the memory transport, driving a private in-process instance that delivers after commit instead of immediately. Does not persist to the database; for development against a shared database where the outbox relay would claim rows from any node |
 | `transports.outbox.*` | — | `enabled`, `relay_interval` default `10s`, `max_retries` default `10`, `batch_size` default `100`, `lease_multiplier` default `4`, `min_lease` default `15s`, `sink` default `memory`, `cleanup_interval` default `1h`, `completed_ttl` default `168h`; cleanup fields belong to framework config, not `event/transport/outbox.Config` |
 | `transports.redis_stream.*` | — | `enabled`, `stream_prefix` default `vef:events:`, `max_len_approx` default `0` (no trimming), `block_timeout` default `5s`, `claim_idle` default `60s`, `claim_interval` default `30s`, `claim_batch_size` default `64`, `reaper_concurrency` default `4`, `handler_timeout` default `30s`, `setup_timeout` default `5s`, `consumer_id` default prefix `vef`, `start_id` default `0` (`"$"` skips backlog for newly created groups), `idle_group_retention` default `0` (disables orphaned consumer-group reclamation), `idle_group_sweep_interval` default `10m` |
 | `middleware.*` | `bool` | middleware toggles: `logging`, `tracing`, `tracing_strict`, `metrics`, `recover`, `inbox` |
@@ -285,19 +289,40 @@ Runtime note:
 
 | Symbol | Kind | Signature or value |
 | --- | --- | --- |
+| `config.APIConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.APIConfig` |
+| `config.APIRateLimitConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.APIRateLimitConfig` |
+| `config.APIKeyConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.APIKeyConfig` |
 | `config.AppConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.AppConfig` |
+| `config.ApprovalBusinessBindingConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.ApprovalBusinessBindingConfig` |
+| `config.ApprovalBindingConsistency` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.ApprovalBindingConsistency` |
 | `config.ApprovalConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.ApprovalConfig` |
+| `config.BasicAccountConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.BasicAccountConfig` |
 | `config.Config` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.Config` |
 | `config.CORSConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.CORSConfig` |
+| `config.CronConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.CronConfig` |
+| `config.CronStoreConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.CronStoreConfig` |
 | `config.DBKind` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.DBKind` |
 | `config.DataSourceConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.DataSourceConfig` |
 | `config.DataSourcesConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.DataSourcesConfig` |
+| `config.DefaultAPIRateLimitMax` | `CONST` | `int = 100` |
+| `config.DefaultAPIRateLimitPeriod` | `CONST` | `time.Duration = 300000000000` |
 | `config.DefaultClaimTTL` | `CONST` | `time.Duration = 86400000000000` |
+| `config.DefaultCronStoreAbandonedAfter` | `CONST` | `time.Duration = 60000000000` |
+| `config.DefaultCronStoreBatchSize` | `CONST` | `int = 32` |
+| `config.DefaultCronStoreHeartbeatInterval` | `CONST` | `time.Duration = 10000000000` |
+| `config.DefaultCronStoreMaxConcurrent` | `CONST` | `int = 16` |
+| `config.DefaultCronStoreMisfireThreshold` | `CONST` | `time.Duration = 60000000000` |
+| `config.DefaultCronStorePollInterval` | `CONST` | `time.Duration = 5000000000` |
 | `config.DefaultDeleteBatchSize` | `CONST` | `int = 100` |
 | `config.DefaultDeleteConcurrency` | `CONST` | `int = 8` |
 | `config.DefaultDeleteLeaseWindow` | `CONST` | `time.Duration = 300000000000` |
 | `config.DefaultDeleteMaxAttempts` | `CONST` | `int = 12` |
 | `config.DefaultDeleteWorkerInterval` | `CONST` | `time.Duration = 300000000000` |
+| `config.DefaultFormDataMaxBytes` | `CONST` | `int = 65536` |
+| `config.DefaultIntegrationInboundRateLimitMax` | `CONST` | `int = 120` |
+| `config.DefaultIntegrationInboundRateLimitPeriod` | `CONST` | `time.Duration = 60000000000` |
+| `config.ApprovalBindingEventual` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.ApprovalBindingConsistency = "eventual"` |
+| `config.ApprovalBindingSynchronous` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.ApprovalBindingConsistency = "synchronous"` |
 | `config.DefaultLockoutBackoffBase` | `CONST` | `time.Duration = 1000000000` |
 | `config.DefaultLockoutBackoffMax` | `CONST` | `time.Duration = 900000000000` |
 | `config.DefaultLockoutLockDuration` | `CONST` | `time.Duration = 900000000000` |
@@ -313,7 +338,16 @@ Runtime note:
 | `config.EnvI18NLanguage` | `CONST` | `untyped string = "VEF_I18N_LANGUAGE"` |
 | `config.EnvPrefix` | `CONST` | `untyped string = "VEF"` |
 | `config.EnvLogLevel` | `CONST` | `untyped string = "VEF_LOG_LEVEL"` |
+| `config.ErrCronStoreAbandonedTooSoon` | `VAR` | `error` |
 | `config.ErrInboxRetentionTooShort` | `VAR` | `error` |
+| `config.ErrInvalidApprovalBindingConsistency` | `VAR` | `error` |
+| `config.ErrInvalidApprovalBusinessBindingWorkerConfig` | `VAR` | `error` |
+| `config.ErrInvalidApprovalFormDataMaxBytes` | `VAR` | `error` |
+| `config.ErrInvalidCronStoreCount` | `VAR` | `error` |
+| `config.ErrInvalidCronStoreDuration` | `VAR` | `error` |
+| `config.ErrInvalidIntegrationLogMode` | `VAR` | `error` |
+| `config.ErrInvalidIntegrationLogRetention` | `VAR` | `error` |
+| `config.ErrInvalidIntegrationSecretAlgorithm` | `VAR` | `error` |
 | `config.ErrInvalidLockoutKey` | `VAR` | `error` |
 | `config.ErrInvalidLockoutStrategy` | `VAR` | `error` |
 | `config.ErrInvalidSessionOnExceed` | `VAR` | `error` |
@@ -326,7 +360,19 @@ Runtime note:
 | `config.EventRedisStreamTransportConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.EventRedisStreamTransportConfig` |
 | `config.EventRoutingRule` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.EventRoutingRule` |
 | `config.EventTransportsConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.EventTransportsConfig` |
+| `config.EventTxMemoryTransportConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.EventTxMemoryTransportConfig` |
 | `config.FilesystemConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.FilesystemConfig` |
+| `config.IntegrationConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.IntegrationConfig` |
+| `config.IntegrationInboundConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.IntegrationInboundConfig` |
+| `config.IntegrationInboundRateLimitConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.IntegrationInboundRateLimitConfig` |
+| `config.IntegrationLogConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogConfig` |
+| `config.IntegrationLogMode` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogMode` |
+| `config.IntegrationLogAll` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogMode = "all"` |
+| `config.IntegrationLogErrors` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogMode = "errors"` |
+| `config.IntegrationLogOff` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogMode = "off"` |
+| `config.IntegrationSecretAlgorithm` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.IntegrationSecretAlgorithm` |
+| `config.IntegrationSecretAlgorithmAES` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.IntegrationSecretAlgorithm = "aes"` |
+| `config.IntegrationSecretAlgorithmSM4` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.IntegrationSecretAlgorithm = "sm4"` |
 | `config.LockoutConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.LockoutConfig` |
 | `config.LockoutKey` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.LockoutKey` |
 | `config.LockoutKeyIP` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.LockoutKey = "ip"` |
@@ -343,6 +389,7 @@ Runtime note:
 | `config.PasswordPolicyConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.PasswordPolicyConfig` |
 | `config.Postgres` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.DBKind = "postgres"` |
 | `config.PrimaryDataSourceName` | `CONST` | `untyped string = "primary"` |
+| `config.PushConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.PushConfig` |
 | `config.RedisConfig` | `TYPE` | `github.com/coldsmirk/vef-framework-go/config.RedisConfig` |
 | `config.SQLServer` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.DBKind = "sqlserver"` |
 | `config.SQLite` | `CONST` | `github.com/coldsmirk/vef-framework-go/config.DBKind = "sqlite"` |
@@ -373,6 +420,9 @@ Runtime note:
 | `config.AppConfig.Port` | `uint16 [field_order=2 tag="config:\"port\""]` |
 | `config.AppConfig.BodyLimit` | `string [field_order=3 tag="config:\"body_limit\""]` |
 | `config.AppConfig.TrustedProxies` | `[]string [field_order=4 tag="config:\"trusted_proxies\""]` |
+| `config.APIConfig.RateLimit` | `github.com/coldsmirk/vef-framework-go/config.APIRateLimitConfig [field_order=1 tag="config:\"rate_limit\""]` |
+| `config.APIRateLimitConfig.Max` | `int [field_order=1 tag="config:\"max\""]` |
+| `config.APIRateLimitConfig.Period` | `time.Duration [field_order=2 tag="config:\"period\""]` |
 | `config.ApprovalConfig.AutoMigrate` | `bool [field_order=1 tag="config:\"auto_migrate\""]` |
 | `config.ApprovalConfig.TimeoutScanInterval` | `time.Duration [field_order=2 tag="config:\"timeout_scan_interval\""]` |
 | `config.ApprovalConfig.PreWarningScanInterval` | `time.Duration [field_order=3 tag="config:\"pre_warning_scan_interval\""]` |
@@ -381,8 +431,24 @@ Runtime note:
 | `config.ApprovalConfig.FormSnapshotRetention` | `time.Duration [field_order=6 tag="config:\"form_snapshot_retention\""]` |
 | `config.ApprovalConfig.UrgeRecordRetention` | `time.Duration [field_order=7 tag="config:\"urge_record_retention\""]` |
 | `config.ApprovalConfig.CCRecordRetention` | `time.Duration [field_order=8 tag="config:\"cc_record_retention\""]` |
+| `config.ApprovalConfig.FormDataMaxBytes` | `int [field_order=9 tag="config:\"form_data_max_bytes\""]` |
+| `config.ApprovalConfig.BusinessBinding` | `github.com/coldsmirk/vef-framework-go/config.ApprovalBusinessBindingConfig [field_order=10 tag="config:\"business_binding\""]` |
+| `config.ApprovalBusinessBindingConfig.Consistency` | `github.com/coldsmirk/vef-framework-go/config.ApprovalBindingConsistency [field_order=1 tag="config:\"consistency\""]` |
+| `config.ApprovalBusinessBindingConfig.ScanInterval` | `time.Duration [field_order=2 tag="config:\"scan_interval\""]` |
+| `config.ApprovalBusinessBindingConfig.BatchSize` | `int [field_order=3 tag="config:\"batch_size\""]` |
 | `config.CORSConfig.Enabled` | `bool [field_order=1 tag="config:\"enabled\""]` |
 | `config.CORSConfig.AllowOrigins` | `[]string [field_order=2 tag="config:\"allow_origins\""]` |
+| `config.CronConfig.Store` | `github.com/coldsmirk/vef-framework-go/config.CronStoreConfig [field_order=1 tag="config:\"store\""]` |
+| `config.CronStoreConfig.Enabled` | `bool [field_order=1 tag="config:\"enabled\""]` |
+| `config.CronStoreConfig.AutoMigrate` | `bool [field_order=2 tag="config:\"auto_migrate\""]` |
+| `config.CronStoreConfig.PollInterval` | `time.Duration [field_order=3 tag="config:\"poll_interval\""]` |
+| `config.CronStoreConfig.BatchSize` | `int [field_order=4 tag="config:\"batch_size\""]` |
+| `config.CronStoreConfig.MaxConcurrent` | `int [field_order=5 tag="config:\"max_concurrent\""]` |
+| `config.CronStoreConfig.MisfireThreshold` | `time.Duration [field_order=6 tag="config:\"misfire_threshold\""]` |
+| `config.CronStoreConfig.HeartbeatInterval` | `time.Duration [field_order=7 tag="config:\"heartbeat_interval\""]` |
+| `config.CronStoreConfig.AbandonedAfter` | `time.Duration [field_order=8 tag="config:\"abandoned_after\""]` |
+| `config.CronStoreConfig.RunTimeout` | `time.Duration [field_order=9 tag="config:\"run_timeout\""]` |
+| `config.CronStoreConfig.RunRetention` | `time.Duration [field_order=10 tag="config:\"run_retention\""]` |
 | `config.DataSourceConfig.Kind` | `github.com/coldsmirk/vef-framework-go/config.DBKind [field_order=1 tag="config:\"type\""]` |
 | `config.DataSourceConfig.Host` | `string [field_order=2 tag="config:\"host\""]` |
 | `config.DataSourceConfig.Port` | `uint16 [field_order=3 tag="config:\"port\""]` |
@@ -443,7 +509,26 @@ Runtime note:
 | `config.EventTransportsConfig.Memory` | `github.com/coldsmirk/vef-framework-go/config.EventMemoryTransportConfig [field_order=1 tag="config:\"memory\""]` |
 | `config.EventTransportsConfig.Outbox` | `github.com/coldsmirk/vef-framework-go/config.EventOutboxTransportConfig [field_order=2 tag="config:\"outbox\""]` |
 | `config.EventTransportsConfig.RedisStream` | `github.com/coldsmirk/vef-framework-go/config.EventRedisStreamTransportConfig [field_order=3 tag="config:\"redis_stream\""]` |
+| `config.EventTransportsConfig.TxMemory` | `github.com/coldsmirk/vef-framework-go/config.EventTxMemoryTransportConfig [field_order=4 tag="config:\"tx_memory\""]` |
+| `config.EventTxMemoryTransportConfig.Enabled` | `bool [field_order=1 tag="config:\"enabled\""]` |
+| `config.EventTxMemoryTransportConfig.QueueSize` | `int [field_order=2 tag="config:\"queue_size\""]` |
+| `config.EventTxMemoryTransportConfig.FullPolicy` | `string [field_order=3 tag="config:\"full_policy\""]` |
+| `config.EventTxMemoryTransportConfig.PublishTimeout` | `time.Duration [field_order=4 tag="config:\"publish_timeout\""]` |
 | `config.FilesystemConfig.Root` | `string [field_order=1 tag="config:\"root\""]` |
+| `config.IntegrationConfig.AutoMigrate` | `bool [field_order=1 tag="config:\"auto_migrate\""]` |
+| `config.IntegrationConfig.SecretKey` | `string [field_order=2 tag="config:\"secret_key\""]` |
+| `config.IntegrationConfig.SecretAlgorithm` | `github.com/coldsmirk/vef-framework-go/config.IntegrationSecretAlgorithm [field_order=3 tag="config:\"secret_algorithm\""]` |
+| `config.IntegrationConfig.RunTimeout` | `time.Duration [field_order=4 tag="config:\"run_timeout\""]` |
+| `config.IntegrationConfig.MaxResponseBody` | `int64 [field_order=5 tag="config:\"max_response_body\""]` |
+| `config.IntegrationConfig.Log` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogConfig [field_order=6 tag="config:\"log\""]` |
+| `config.IntegrationConfig.Inbound` | `github.com/coldsmirk/vef-framework-go/config.IntegrationInboundConfig [field_order=7 tag="config:\"inbound\""]` |
+| `config.IntegrationInboundConfig.RateLimit` | `github.com/coldsmirk/vef-framework-go/config.IntegrationInboundRateLimitConfig [field_order=1 tag="config:\"rate_limit\""]` |
+| `config.IntegrationInboundRateLimitConfig.Max` | `int [field_order=1 tag="config:\"max\""]` |
+| `config.IntegrationInboundRateLimitConfig.Period` | `time.Duration [field_order=2 tag="config:\"period\""]` |
+| `config.IntegrationLogConfig.Mode` | `github.com/coldsmirk/vef-framework-go/config.IntegrationLogMode [field_order=1 tag="config:\"mode\""]` |
+| `config.IntegrationLogConfig.CaptureLimit` | `int [field_order=2 tag="config:\"capture_limit\""]` |
+| `config.IntegrationLogConfig.MaskFields` | `[]string [field_order=3 tag="config:\"mask_fields\""]` |
+| `config.IntegrationLogConfig.Retention` | `time.Duration [field_order=4 tag="config:\"retention\""]` |
 | `config.LockoutConfig.Enabled` | `*bool [field_order=1 tag="config:\"enabled\""]` |
 | `config.LockoutConfig.MaxFailures` | `int [field_order=2 tag="config:\"max_failures\""]` |
 | `config.LockoutConfig.Window` | `time.Duration [field_order=3 tag="config:\"window\""]` |
@@ -462,7 +547,6 @@ Runtime note:
 | `config.MinIOConfig.UseSSL` | `bool [field_order=6 tag="config:\"use_ssl\""]` |
 | `config.MonitorConfig.SampleInterval` | `time.Duration [field_order=1 tag="config:\"sample_interval\""]` |
 | `config.MonitorConfig.SampleDuration` | `time.Duration [field_order=2 tag="config:\"sample_duration\""]` |
-| `config.MonitorConfig.ExcludedMounts` | `[]string [field_order=3 tag="config:\"excluded_mounts\""]` |
 | `config.PasswordPolicyConfig.MinLength` | `int [field_order=1 tag="config:\"min_length\""]` |
 | `config.PasswordPolicyConfig.MaxLength` | `int [field_order=2 tag="config:\"max_length\""]` |
 | `config.PasswordPolicyConfig.RequireUpper` | `bool [field_order=3 tag="config:\"require_upper\""]` |
@@ -474,6 +558,14 @@ Runtime note:
 | `config.PasswordPolicyConfig.Blocklist` | `[]string [field_order=9 tag="config:\"blocklist\""]` |
 | `config.PasswordPolicyConfig.HistoryDepth` | `int [field_order=10 tag="config:\"history_depth\""]` |
 | `config.PasswordPolicyConfig.MaxAge` | `time.Duration [field_order=11 tag="config:\"max_age\""]` |
+| `config.PushConfig.Enabled` | `bool [field_order=1 tag="config:\"enabled\""]` |
+| `config.PushConfig.Path` | `string [field_order=2 tag="config:\"path\""]` |
+| `config.PushConfig.AllowedOrigins` | `[]string [field_order=3 tag="config:\"allowed_origins\""]` |
+| `config.PushConfig.PingInterval` | `time.Duration [field_order=4 tag="config:\"ping_interval\""]` |
+| `config.PushConfig.WriteTimeout` | `time.Duration [field_order=5 tag="config:\"write_timeout\""]` |
+| `config.PushConfig.SendBuffer` | `int [field_order=6 tag="config:\"send_buffer\""]` |
+| `config.PushConfig.MaxConnectionsPerUser` | `int [field_order=7 tag="config:\"max_connections_per_user\""]` |
+| `config.PushConfig.SessionRecheckInterval` | `time.Duration [field_order=8 tag="config:\"session_recheck_interval\""]` |
 | `config.RedisConfig.Enabled` | `bool [field_order=1 tag="config:\"enabled\""]` |
 | `config.RedisConfig.Host` | `string [field_order=2 tag="config:\"host\""]` |
 | `config.RedisConfig.Port` | `uint16 [field_order=3 tag="config:\"port\""]` |
@@ -491,6 +583,12 @@ Runtime note:
 | `config.SecurityConfig.PasswordPolicy` | `github.com/coldsmirk/vef-framework-go/config.PasswordPolicyConfig [field_order=8 tag="config:\"password_policy\""]` |
 | `config.SecurityConfig.TokenType` | `github.com/coldsmirk/vef-framework-go/config.TokenType [field_order=9 tag="config:\"token_type\""]` |
 | `config.SecurityConfig.Session` | `github.com/coldsmirk/vef-framework-go/config.SessionConfig [field_order=10 tag="config:\"session\""]` |
+| `config.SecurityConfig.APIKeys` | `map[string]github.com/coldsmirk/vef-framework-go/config.APIKeyConfig [field_order=11 tag="config:\"api_keys\""]` |
+| `config.SecurityConfig.BasicAccounts` | `map[string]github.com/coldsmirk/vef-framework-go/config.BasicAccountConfig [field_order=12 tag="config:\"basic_accounts\""]` |
+| `config.APIKeyConfig.Key` | `string [field_order=1 tag="config:\"key\""]` |
+| `config.APIKeyConfig.Roles` | `[]string [field_order=2 tag="config:\"roles\""]` |
+| `config.BasicAccountConfig.Password` | `string [field_order=1 tag="config:\"password\""]` |
+| `config.BasicAccountConfig.Roles` | `[]string [field_order=2 tag="config:\"roles\""]` |
 | `config.SessionConfig.MaxConcurrent` | `int [field_order=1 tag="config:\"max_concurrent\""]` |
 | `config.SessionConfig.OnExceed` | `github.com/coldsmirk/vef-framework-go/config.SessionExceedPolicy [field_order=2 tag="config:\"on_exceed\""]` |
 | `config.SessionConfig.IdleTTL` | `time.Duration [field_order=3 tag="config:\"idle_ttl\""]` |
@@ -506,7 +604,8 @@ Runtime note:
 | `config.StorageConfig.AllowPublicUploads` | `bool [field_order=8 tag="config:\"allow_public_uploads\""]` |
 | `config.StorageConfig.SweepInterval` | `time.Duration [field_order=9 tag="config:\"sweep_interval\""]` |
 | `config.StorageConfig.SweepBatchSize` | `int [field_order=10 tag="config:\"sweep_batch_size\""]` |
-| `config.StorageConfig.DeleteWorkerInterval` | `time.Duration [field_order=11 tag="config:\"delete_worker_interval\""]` |
+| `config.StorageConfig.OrphanRetention` | `time.Duration [field_order=11 tag="config:\"orphan_retention\""]` |
+| `config.StorageConfig.DeleteWorkerInterval` | `time.Duration [field_order=12 tag="config:\"delete_worker_interval\""]` |
 | `config.StorageConfig.DeleteBatchSize` | `int [field_order=12 tag="config:\"delete_batch_size\""]` |
 | `config.StorageConfig.DeleteConcurrency` | `int [field_order=13 tag="config:\"delete_concurrency\""]` |
 | `config.StorageConfig.DeleteMaxAttempts` | `int [field_order=14 tag="config:\"delete_max_attempts\""]` |
@@ -517,7 +616,22 @@ Runtime note:
 | Method | Signature |
 | --- | --- |
 | `config.ApprovalConfig.ApplyDefaults` | `func()` |
+| `config.ApprovalConfig.EffectiveFormDataMaxBytes` | `func() int` |
+| `config.ApprovalConfig.Validate` | `func() error` |
+| `config.ApprovalBusinessBindingConfig.EffectiveConsistency` | `func() github.com/coldsmirk/vef-framework-go/config.ApprovalBindingConsistency` |
+| `config.ApprovalBusinessBindingConfig.EffectiveScanInterval` | `func() time.Duration` |
+| `config.ApprovalBusinessBindingConfig.EffectiveBatchSize` | `func() int` |
+| `config.ApprovalBusinessBindingConfig.Validate` | `func() error` |
+| `config.APIRateLimitConfig.EffectiveMax` | `func() int` |
+| `config.APIRateLimitConfig.EffectivePeriod` | `func() time.Duration` |
 | `config.Config.Unmarshal` | `func(key string, target any) error` |
+| `config.CronConfig.Validate` | `func() error` |
+| `config.CronStoreConfig.EffectivePollInterval` | `func() time.Duration` |
+| `config.CronStoreConfig.EffectiveBatchSize` | `func() int` |
+| `config.CronStoreConfig.EffectiveMaxConcurrent` | `func() int` |
+| `config.CronStoreConfig.EffectiveMisfireThreshold` | `func() time.Duration` |
+| `config.CronStoreConfig.EffectiveHeartbeatInterval` | `func() time.Duration` |
+| `config.CronStoreConfig.EffectiveAbandonedAfter` | `func() time.Duration` |
 | `config.DataSourcesConfig.Primary` | `func() github.com/coldsmirk/vef-framework-go/config.DataSourceConfig` |
 | `config.EventConfig.EffectiveAsyncQueueSize` | `func() int` |
 | `config.EventConfig.EffectiveAsyncWorkers` | `func() int` |
@@ -529,6 +643,14 @@ Runtime note:
 | `config.EventInboxConfig.EffectiveRetention` | `func() time.Duration` |
 | `config.EventOutboxTransportConfig.EffectiveCleanupInterval` | `func() time.Duration` |
 | `config.EventOutboxTransportConfig.EffectiveCompletedTTL` | `func() time.Duration` |
+| `config.IntegrationConfig.EffectiveSecretAlgorithm` | `func() github.com/coldsmirk/vef-framework-go/config.IntegrationSecretAlgorithm` |
+| `config.IntegrationConfig.EffectiveRunTimeout` | `func() time.Duration` |
+| `config.IntegrationConfig.EffectiveMaxResponseBody` | `func() int64` |
+| `config.IntegrationConfig.Validate` | `func() error` |
+| `config.IntegrationInboundRateLimitConfig.EffectiveMax` | `func() int` |
+| `config.IntegrationInboundRateLimitConfig.EffectivePeriod` | `func() time.Duration` |
+| `config.IntegrationLogConfig.EffectiveMode` | `func() github.com/coldsmirk/vef-framework-go/config.IntegrationLogMode` |
+| `config.IntegrationLogConfig.EffectiveCaptureLimit` | `func() int` |
 | `config.LockoutConfig.IsEnabled` | `func() bool` |
 | `config.LockoutConfig.EffectiveMaxFailures` | `func() int` |
 | `config.LockoutConfig.EffectiveWindow` | `func() time.Duration` |
@@ -538,6 +660,11 @@ Runtime note:
 | `config.LockoutConfig.EffectiveBackoffMax` | `func() time.Duration` |
 | `config.LockoutConfig.EffectiveKey` | `func() github.com/coldsmirk/vef-framework-go/config.LockoutKey` |
 | `config.LockoutConfig.Validate` | `func() error` |
+| `config.PushConfig.EffectivePath` | `func() string` |
+| `config.PushConfig.EffectivePingInterval` | `func() time.Duration` |
+| `config.PushConfig.EffectiveWriteTimeout` | `func() time.Duration` |
+| `config.PushConfig.EffectiveSendBuffer` | `func() int` |
+| `config.PushConfig.EffectiveSessionRecheckInterval` | `func() time.Duration` |
 | `config.SecurityConfig.EffectiveTokenType` | `func() github.com/coldsmirk/vef-framework-go/config.TokenType` |
 | `config.SecurityConfig.Validate` | `func() error` |
 | `config.SessionConfig.EffectiveOnExceed` | `func() github.com/coldsmirk/vef-framework-go/config.SessionExceedPolicy` |
@@ -582,6 +709,34 @@ Runtime note:
 | `config.SessionConfig.EffectiveIdleTTL()` | Returns `IdleTTL` when positive, otherwise `config.DefaultSessionIdleTTL` (`30m`). |
 | `config.SessionConfig.EffectiveMaxLifetime()` | Returns `MaxLifetime` when positive, otherwise `config.DefaultSessionMaxLifetime` (`7 * 24h`). |
 | `config.SessionConfig.IsSliding()` | Returns `true` when `Sliding` is nil (idle-timeout renewal is on by default) or when it points to `true`. |
+| `config.ApprovalConfig.EffectiveFormDataMaxBytes()` | Returns `FormDataMaxBytes` when positive, otherwise `config.DefaultFormDataMaxBytes` (`65536`, 64 KiB). |
+| `config.ApprovalConfig.Validate()` | Rejects `FormDataMaxBytes < 0` (wrapping `config.ErrInvalidApprovalFormDataMaxBytes`) and delegates to `BusinessBinding.Validate()`. |
+| `config.ApprovalBusinessBindingConfig.EffectiveConsistency()` | Returns `Consistency` or `config.ApprovalBindingSynchronous` ("synchronous") when unset. |
+| `config.ApprovalBusinessBindingConfig.EffectiveScanInterval()` | Returns `ScanInterval` when positive, otherwise `10s`. |
+| `config.ApprovalBusinessBindingConfig.EffectiveBatchSize()` | Returns `BatchSize` when positive, otherwise `100`. |
+| `config.ApprovalBusinessBindingConfig.Validate()` | Rejects out-of-enum `Consistency` (wrapping `config.ErrInvalidApprovalBindingConsistency`), negative `ScanInterval` or `BatchSize` (wrapping `config.ErrInvalidApprovalBusinessBindingWorkerConfig`). |
+| `config.APIRateLimitConfig.EffectiveMax()` | Returns `Max` when positive, otherwise `config.DefaultAPIRateLimitMax` (`100`). |
+| `config.APIRateLimitConfig.EffectivePeriod()` | Returns `Period` when positive, otherwise `config.DefaultAPIRateLimitPeriod` (`5m`). |
+| `config.CronConfig.Validate()` | Rejects negative durations (wrapping `config.ErrInvalidCronStoreDuration`), negative counts (wrapping `config.ErrInvalidCronStoreCount`), and `abandoned_after` tighter than twice the heartbeat interval (wrapping `config.ErrCronStoreAbandonedTooSoon`). |
+| `config.CronStoreConfig.EffectivePollInterval()` | Returns `PollInterval` when positive, otherwise `config.DefaultCronStorePollInterval` (`5s`). |
+| `config.CronStoreConfig.EffectiveBatchSize()` | Returns `BatchSize` when positive, otherwise `config.DefaultCronStoreBatchSize` (`32`). |
+| `config.CronStoreConfig.EffectiveMaxConcurrent()` | Returns `MaxConcurrent` when positive, otherwise `config.DefaultCronStoreMaxConcurrent` (`16`). |
+| `config.CronStoreConfig.EffectiveMisfireThreshold()` | Returns `MisfireThreshold` when positive, otherwise `config.DefaultCronStoreMisfireThreshold` (`1m`). |
+| `config.CronStoreConfig.EffectiveHeartbeatInterval()` | Returns `HeartbeatInterval` when positive, otherwise `config.DefaultCronStoreHeartbeatInterval` (`10s`). |
+| `config.CronStoreConfig.EffectiveAbandonedAfter()` | Returns `AbandonedAfter` when positive, otherwise `config.DefaultCronStoreAbandonedAfter` (`1m`). |
+| `config.IntegrationConfig.EffectiveSecretAlgorithm()` | Returns `SecretAlgorithm` or `config.IntegrationSecretAlgorithmAES` ("aes") when unset. |
+| `config.IntegrationConfig.EffectiveRunTimeout()` | Returns `RunTimeout` when positive, otherwise `30s`. |
+| `config.IntegrationConfig.EffectiveMaxResponseBody()` | Returns `MaxResponseBody` when positive, otherwise `8 MiB` (`8<<20`). |
+| `config.IntegrationConfig.Validate()` | Rejects out-of-enum `Log.Mode` (wrapping `config.ErrInvalidIntegrationLogMode`), out-of-enum `SecretAlgorithm` (wrapping `config.ErrInvalidIntegrationSecretAlgorithm`), and negative `Log.Retention` (wrapping `config.ErrInvalidIntegrationLogRetention`). |
+| `config.IntegrationInboundRateLimitConfig.EffectiveMax()` | Returns `Max` when positive, otherwise `config.DefaultIntegrationInboundRateLimitMax` (`120`). |
+| `config.IntegrationInboundRateLimitConfig.EffectivePeriod()` | Returns `Period` when positive, otherwise `config.DefaultIntegrationInboundRateLimitPeriod` (`1m`). |
+| `config.IntegrationLogConfig.EffectiveMode()` | Returns `Mode` or `config.IntegrationLogErrors` ("errors") when unset. |
+| `config.IntegrationLogConfig.EffectiveCaptureLimit()` | Returns `CaptureLimit` when positive, otherwise `4096`. |
+| `config.PushConfig.EffectivePath()` | Returns `Path` or `"/ws"` when unset. |
+| `config.PushConfig.EffectivePingInterval()` | Returns `PingInterval` when positive, otherwise `30s`. |
+| `config.PushConfig.EffectiveWriteTimeout()` | Returns `WriteTimeout` when positive, otherwise `10s`. |
+| `config.PushConfig.EffectiveSendBuffer()` | Returns `SendBuffer` when positive, otherwise `32`. |
+| `config.PushConfig.EffectiveSessionRecheckInterval()` | Returns `SessionRecheckInterval` when positive, otherwise `60s`. |
 
 `DataSourcesConfig.Map` is intentionally untagged. The internal config module unmarshals `vef.data_sources` into a `map[string]config.DataSourceConfig` first and then wraps it in `DataSourcesConfig{Map: sources}`; this preserves arbitrary data-source names while still reserving `config.PrimaryDataSourceName` (`"primary"`) for the framework-wide `orm.DB`.
 

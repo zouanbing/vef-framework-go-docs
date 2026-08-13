@@ -75,7 +75,7 @@ reply, err := model.Generate(ctx, messages,
 
 `NewOptions()` 会创建默认 option 累加器；`Options.Apply(...)` 把 functional
 options 折叠进去。大多数应用代码直接把 options 传给 `Generate`、`Stream`、
-`Run` 或 `Invoke`，不需要手工操作累加器。
+`Run`，不需要手工操作累加器。
 `Apply` 会修改并返回同一个累加器，按参数顺序应用 options；后传入的 option
 可以覆盖之前 option 设置的字段。
 

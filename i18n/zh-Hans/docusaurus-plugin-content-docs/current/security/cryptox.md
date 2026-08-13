@@ -199,13 +199,28 @@ plaintext, err := cipher.Decrypt(encrypted)
 | SM2 | 非对称 | ✅ | ✅ | 国密 |
 | SM4 | 对称 | ✅ | ❌ | 国密 |
 
+## 集成密钥加密
+
+集成引擎（见 [Integration](../integration/overview)）使用对称加密算法
+密封存储的密钥。算法通过 `vef.integration.secret_algorithm` 配置：
+
+| 值 | 加密算法 | 模式 |
+| --- | --- | --- |
+| `"aes"`（默认） | AES | GCM |
+| `"sm4"` | SM4 | GCM |
+
+配置键的类型是 `config.IntegrationSecretAlgorithm`；其常量包括
+`config.IntegrationSecretAlgorithmAES`（`"aes"`）和
+`config.IntegrationSecretAlgorithmSM4`（`"sm4"`）。无法识别的值在配置校验
+时会以 `config.ErrInvalidIntegrationSecretAlgorithm` 失败。
+
 ## 选项、常量和密钥辅助函数
 
 | 范围 | 公开 API |
 | --- | --- |
 | AES modes/options | `AESMode`, `AesModeGcm`, `AesModeCbc`, `WithAESMode(mode)`, `WithAESIv(iv)` |
 | RSA modes/options | `RSAMode`, `RSASignMode`, `RsaModeOAEP`, `RsaModePKCS1v15`, `RsaSignModePSS`, `RsaSignModePKCS1v15`, `WithRSAMode(mode)`, `WithRSASignMode(mode)` |
-| SM4 options | `WithSM4Iv(iv)` |
+| SM4 modes/options | `SM4Mode`, `Sm4ModeGcm`, `Sm4ModeCbc`, `WithSM4Mode(mode)`, `WithSM4Iv(iv)` |
 | ECDSA curves | `ECDSACurve`, `EcdsaCurveP224`, `EcdsaCurveP256`, `EcdsaCurveP384`, `EcdsaCurveP521` |
 | ECIES curves | `ECIESCurve`, `EciesCurveP256`, `EciesCurveP384`, `EciesCurveP521`, `EciesCurveX25519` |
 | key helpers | `GenerateECDSAKey(curve)`, `GenerateECIESKey(curve)` |

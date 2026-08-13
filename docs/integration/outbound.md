@@ -32,6 +32,13 @@ is enabled:
 | `Invoke(ctx, contract string, input any, opts ...InvokeOption) (*Result, error)` | validates input against the contract's input schema, runs the adapter script, validates the output, returns the `Result` |
 | `integration.Call[T](ctx, inv, contract, input, opts...) (T, error)` | typed wrapper over `Invoke` that decodes the output into `T` through a JSON round-trip |
 
+### Invocation types
+
+| Symbol | Contract |
+| --- | --- |
+| `InvokeConfig` | settings collected from `InvokeOption`s and consumed by the `Invoker` implementation |
+| `NewInvokeConfig` | `NewInvokeConfig(opts ...InvokeOption) InvokeConfig` — resolves options into an `InvokeConfig` |
+
 ### Invoke options
 
 | Option | Behavior |
@@ -50,6 +57,12 @@ is enabled:
 | `System() string` | code of the system that served the invocation |
 | `Duration() time.Duration` | wall time of the invocation |
 | `Cached() bool` | whether the output came from the response cache |
+
+`Result` is assembled by the framework through `NewResult`:
+
+| Symbol | Contract |
+| --- | --- |
+| `NewResult` | `NewResult(output, system, duration, cached) *Result` — assembles a `Result` for the framework's `Invoker` implementation |
 
 ## Adapter Script Environment
 
@@ -89,7 +102,7 @@ const data = res.json();
 
 | Function | Behavior |
 | --- | --- |
-| `http.fetch(path, { method, headers, query, body, timeout, envelope })` | full request form |
+| `http.fetch(path, { method, headers, query, body, timeout, envelope, redirect })` | full request form; `redirect` supports only the default `follow` mode — `error` / `manual` are rejected |
 | `http.get(path, options?)` / `http.delete(path, options?)` | sugar over fetch |
 | `http.post(path, body, options?)` / `http.put(...)` / `http.patch(...)` | sugar over fetch with a body |
 

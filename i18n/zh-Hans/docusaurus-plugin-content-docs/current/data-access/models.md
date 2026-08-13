@@ -203,6 +203,8 @@ func (u *User) BeforeInsert(ctx context.Context, query *orm.BunInsertQuery) erro
 
 并不是每个模型都会带上全部这些字段。`orm.CreationTrackedModel` 只提供 `created_*` 这一组，`orm.FullTrackedModel` 和 `orm.FullAuditedModel` 才会同时提供 `created_*` 与 `updated_*` 两组。
 
+框架会在**每种** UPDATE 形态上自动打上 `updated_at` 和 `updated_by`——无论查询是基于模型的、使用 `Set`/`SetExpr` 的、有列白名单的、还是批量更新。`created_at` 和 `created_by` 会被自动从 UPDATE 中排除（它们带有 `skipupdate` 标签，且框架的 `beforeUpdate` 钩子会跳过它们）。唯一的例外是显式 `Set("updated_at", ...)` 或 `Set("updated_by", ...)`——框架尊重调用方意图，不会覆盖显式设置的审计列。
+
 框架还导出了审计列名和字段名常量：
 
 ```go

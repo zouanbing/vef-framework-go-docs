@@ -244,7 +244,8 @@ Selected result code ranges:
 | `1000-1099` | authentication and challenge errors |
 | `1100-1199` | authorization errors |
 | `1200-1499` | resource, media type, and request errors |
-| `1500-1699` | not implemented and SQL-related errors |
+| `1500-1599` | not implemented |
+| `1600-1699` | SQL-related errors |
 | `1900-1999` | unknown errors |
 | `2000+` | business errors |
 
@@ -323,15 +324,15 @@ Authentication, signature, session, and challenge flow errors live in `github.co
 
 | Module package | Error values | Code range |
 | --- | --- | --- |
-| `api` | `api.ErrInvalidRequestParams`, `api.ErrInvalidRequestMeta` | 1400 (`result.ErrCodeBadRequest`) |
+| `api` | `api.ErrInvalidRequestParams`, `api.ErrInvalidRequestMeta`, plus the body-encoding errors `api.ErrUnsupportedBodyEncoding`, `api.ErrBodyDecodeFailed`, and `api.ErrBodyTooLarge` | 1400 (`result.ErrCodeBadRequest`) |
 | `monitor` | `monitor.ErrNotReady`, `monitor.ErrCollectionFailed` | 2100-2101 |
-| `storage` | `storage.ErrInvalidFileKey`, `storage.ErrFileNotFound`, `storage.ErrFailedToGetFile`, and multipart upload / claim errors such as `storage.ErrUploadRequiresMultipart`, `storage.ErrUploadPartsIncomplete`, and `storage.ErrAbortFailed` | 2200-2219 |
+| `storage` | `storage.ErrInvalidFileKey`, `storage.ErrFileNotFound`, `storage.ErrFailedToGetFile`, and multipart upload / claim errors such as `storage.ErrUploadRequiresMultipart` and `storage.ErrUploadPartsIncomplete` | 2200-2220 |
 | `schema` | `schema.ErrTableNotFound` | 2300 |
 | `crud` | `crud.ErrCodeProcessorInvalidReturn`, CRUD import/export and primary-key result errors, plus plain sentinels such as `crud.ErrModelNoPrimaryKey` and `crud.ErrAuditUserCompositePK` | 2400-2410 |
 | `expression` | `expression.ErrEvaluationFailed` | 2500 |
 | `approval` | public plain sentinels: `approval.ErrCrossTenantAccess`, `approval.ErrInvalidBusinessIdentifier`, `approval.ErrUnknownNodeKind`, `approval.ErrNodeDataUnmarshal`; built-in approval resources return internal `result.Error` values | 40001-40702 |
 
-> The four public `approval` sentinels are plain Go errors, **not** `result.Error` values, so they have no code/status fields. Built-in approval resource responses use the internal 40xxx result-envelope catalog instead; see the [Approval module](../approval) for the full code and message-key table.
+> `storage.ErrUploadSessionNotFound` and the four public `approval` sentinels are plain Go errors, **not** `result.Error` values, so they have no code/status fields. Built-in approval resource responses use the internal 40xxx result-envelope catalog instead; see the [Approval module](../approval/overview) for the full code and message-key table.
 
 ## Practical Patterns
 

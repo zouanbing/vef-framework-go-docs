@@ -13,8 +13,8 @@ This category splits the module across five pages: this overview (enabling, wiri
 
 Approval is an optional feature module. It is intentionally absent from the
 default `vef.Run(...)` boot graph, so applications that do not need workflow
-support do not register its API resources, CQRS handlers, engine, binding
-listener, or timeout scanners.
+support do not register its API resources, CQRS handlers, engine, business
+projection worker, or timeout scanners.
 
 Enable it explicitly:
 
@@ -87,6 +87,7 @@ timeout_scan_interval     = "1m"
 pre_warning_scan_interval = "5m"
 cleanup_scan_interval     = "24h"
 delegation_max_depth      = 10
+form_data_max_bytes       = 65536    # 64 KiB
 form_snapshot_retention   = "2160h"  # 90 days
 urge_record_retention     = "720h"   # 30 days
 cc_record_retention       = "2160h"  # 90 days
@@ -99,8 +100,12 @@ batch_size    = 100            # projections per scan
 
 `auto_migrate` is a plain boolean switch and is not set by
 `ApprovalConfig.ApplyDefaults()`: enable it explicitly when the app should run
-approval DDL on startup. `cc_record_retention` only prunes CC records that have
-already been read.
+approval DDL on startup. `form_data_max_bytes` caps the JSON-encoded form
+payload an applicant or approver may submit (default `65536`, 64 KiB;
+`config.DefaultFormDataMaxBytes`); raise it for flows with large detail tables.
+A negative value fails config validation
+(`config.ErrInvalidApprovalFormDataMaxBytes`). `cc_record_retention` only
+prunes CC records that have already been read.
 
 `business_binding` controls how approval state is projected onto bound
 business tables: `synchronous` (default) writes the business row inside the
@@ -110,6 +115,11 @@ background worker converge the row (see
 An out-of-enum `consistency` or a negative worker setting fails config
 validation at startup (`config.ErrInvalidApprovalBindingConsistency` /
 `ErrInvalidApprovalBusinessBindingWorkerConfig`).
+
+On every startup the approval migration verifies that each required table
+exists and is keyed by an `id` primary column. A missing table or a missing /
+wrong primary key fails the application with `ErrSchemaOutdated`, so operators
+can detect schema drift immediately rather than at runtime.
 
 > Outbox tuning (`relay_interval`, `max_retries`, `batch_size`) lives under `[vef.event.transports.outbox]`, not `[vef.approval]`. The approval module publishes through the framework-wide outbox transport — see [Event Bus](../infrastructure/event-bus.md).
 

@@ -244,7 +244,8 @@ VEF 把常用错误暴露为可以直接返回的 `result.Error` 值：`result.E
 | `1000-1099` | 认证与 challenge 错误 |
 | `1100-1199` | 授权错误 |
 | `1200-1499` | 资源、媒体类型和请求错误 |
-| `1500-1699` | 未实现与 SQL 相关错误 |
+| `1500-1599` | 未实现 |
+| `1600-1699` | SQL 相关错误 |
 | `1900-1999` | 未知错误 |
 | `2000+` | 业务错误 |
 
@@ -323,15 +324,15 @@ VEF 在框架各处预置了一批 `result.Error`。模块专属错误位于各�
 
 | 模块包 | 错误值 | 编号区间 |
 | --- | --- | --- |
-| `api` | `api.ErrInvalidRequestParams`、`api.ErrInvalidRequestMeta` | 1400（`result.ErrCodeBadRequest`） |
+| `api` | `api.ErrInvalidRequestParams`、`api.ErrInvalidRequestMeta`，以及 body-encoding 错误 `api.ErrUnsupportedBodyEncoding`、`api.ErrBodyDecodeFailed`、`api.ErrBodyTooLarge` | 1400（`result.ErrCodeBadRequest`） |
 | `monitor` | `monitor.ErrNotReady`、`monitor.ErrCollectionFailed` | 2100-2101 |
-| `storage` | `storage.ErrInvalidFileKey`、`storage.ErrFileNotFound`、`storage.ErrFailedToGetFile`，以及 `storage.ErrUploadRequiresMultipart`、`storage.ErrUploadPartsIncomplete`、`storage.ErrAbortFailed` 等 multipart upload / claim 错误 | 2200-2219 |
+| `storage` | `storage.ErrInvalidFileKey`、`storage.ErrFileNotFound`、`storage.ErrFailedToGetFile`，以及 `storage.ErrUploadRequiresMultipart`、`storage.ErrUploadPartsIncomplete` 等 multipart upload / claim 错误 | 2200-2220 |
 | `schema` | `schema.ErrTableNotFound` | 2300 |
 | `crud` | `crud.ErrCodeProcessorInvalidReturn`、CRUD import/export 和主键相关 result 错误，以及 `crud.ErrModelNoPrimaryKey`、`crud.ErrAuditUserCompositePK` 等普通 sentinel | 2400-2410 |
 | `expression` | `expression.ErrEvaluationFailed` | 2500 |
 | `approval` | 公开普通 sentinel：`approval.ErrCrossTenantAccess`、`approval.ErrInvalidBusinessIdentifier`、`approval.ErrUnknownNodeKind`、`approval.ErrNodeDataUnmarshal`；内置审批资源返回 internal `result.Error` | 40001-40702 |
 
-> 这四个公开 `approval` sentinel 都是普通 Go 错误，**不**是 `result.Error`，没有 code/status 字段。内置审批资源响应使用 internal 的 40xxx result envelope 目录；完整 code 与 message key 见 [Approval 模块](../approval)。
+> `storage.ErrUploadSessionNotFound` 和这四个公开 `approval` sentinel 都是普通 Go 错误，**不**是 `result.Error`，没有 code/status 字段。内置审批资源响应使用 internal 的 40xxx result envelope 目录；完整 code 与 message key 见 [Approval 模块](../approval/overview)。
 
 ## Practical Patterns
 

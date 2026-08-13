@@ -12,9 +12,9 @@ The current framework version requires:
 
 - Go `1.26.4`
 
-The built-in expression engine is pure Go. CGO is not required by the expression
-module; enable CGO only when your selected database driver or another native
-integration requires it.
+The framework builds with `CGO_ENABLED=0`: the built-in expression engine uses
+the pure-Go `expr-lang` library, and every built-in database driver is pure Go
+as well. Enable CGO only when you add a native dependency of your own.
 
 ## Runtime prerequisites
 
@@ -106,7 +106,7 @@ enabled = true
 
 [[vef.event.routing]]
 pattern    = "vef.storage.*"
-transports = ["outbox"]
+transports = ["outbox", "memory"]
 ```
 
 The `primary` data source is mandatory. It powers the framework-wide `orm.DB`
@@ -116,7 +116,10 @@ map.
 The two event blocks are not optional decoration: the storage module publishes
 its domain events transactionally and **fails startup** when no transactional
 route serves `vef.storage.*` (the default `memory` transport is not
-transactional). Setting `vef.event.default_transport = "outbox"` is the
+transactional). The route lists `"memory"` — the outbox's default sink
+(`vef.event.transports.outbox.sink`) — alongside `"outbox"` so in-process
+subscribers can attach to it; an outbox-only route publishes but rejects every
+subscription. Setting `vef.event.default_transport = "outbox"` is the
 routing-rule-free alternative. See [Quick Start](./quick-start) for the
 walkthrough of this exact failure.
 
@@ -127,7 +130,7 @@ Add `vef.redis` only when the application really uses Redis-backed features.
 
 When you call `vef.Run(...)`, the framework initializes configuration, the data
 source registry and primary `orm.DB`, middleware, API routing, security, events
-(plus the outbox / redis-stream / inbox transport submodules), the expression
+(plus the tx_memory / outbox / redis-stream / inbox transport submodules), the expression
 engine, the JS engine, CQRS, cron, Redis, distributed locks, mold, storage,
 sequence, schema, monitoring, MCP, server push, and finally the HTTP
 application.

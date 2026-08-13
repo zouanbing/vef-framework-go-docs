@@ -78,6 +78,16 @@ Helpers:
   eviction, and administrative kicks; see
   [Session Management](../security/session-management#revocation-listeners)
 
+```go
+// security.SessionRevocationListener
+OnSessionsRevoked(ctx context.Context, revocations []SessionRevocation)
+
+type SessionRevocation struct {
+    SessionID string
+    UserID    string
+}
+```
+
 ## Cron job handlers
 
 - `vef:cron:job_handlers`
@@ -90,6 +100,21 @@ Registers a durable `cron.JobHandler` with the schedule store — exactly one
 handler per job name; duplicate names fail startup. Handlers optionally ship
 a default schedule via `cron.WithDefaultSchedule`. See
 [Durable Schedules](../infrastructure/cron-store).
+
+```go
+// cron.JobHandler
+Name() string
+Execute(ctx context.Context, execution Execution) error
+
+type Execution struct {
+    RunID        string
+    ScheduleID   string
+    ScheduleName string
+    JobName      string
+    ScheduledAt  time.Time
+    Params       json.RawMessage
+}
+```
 
 ## JS engine libraries
 
@@ -214,11 +239,6 @@ Helpers:
 
 ## Storage integration
 
-Extension groups:
-
-- `vef:api:resources`
-- `vef:app:middlewares`
-
 Helpers:
 
 - `vef.SupplyFileACL(...)`
@@ -324,6 +344,20 @@ framework `logx.Logger` outside dependency injection. It returns
 `Level.String()`, the `Logger` interface contract, and
 `LoggerConfigurable[T]` for immutable components that return a
 logger-configured copy from `WithLogger`.
+
+## ORM transaction commit hook
+
+- `orm.OnCommit(ctx, fn)` — registers a callback to run once the
+  `orm.DB.RunInTx` scope owning the context has committed. The callback
+  receives a cancellation-detached context and cannot report failure; by
+  the time it runs the transaction is already durable. Calling it outside
+  an active `RunInTx` / `RunInReadOnlyTx` scope returns `orm.ErrNoCommitScope`.
+
+This is the seam for work that must happen if and only if the surrounding
+unit of work became durable — dispatching an in-process event, invalidating
+a cache — without that work being able to fail the transaction. It is the
+underlying mechanism used by the `tx_memory` event transport to deliver
+events after commit.
 
 ## A simple decision rule
 

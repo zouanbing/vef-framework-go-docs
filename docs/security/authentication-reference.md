@@ -8,7 +8,7 @@ The public `security` package surface for authentication: principals, JWT, the a
 
 | API group | Public surface |
 | --- | --- |
-| principals | `Principal`, `PrincipalType`, `NewUser`, `NewExternalApp`, `PrincipalSystem`, `PrincipalAnonymous`, `SetUserDetailsType`, `SetExternalAppDetailsType` |
+| principals | `Principal`, `PrincipalType`, `NewUser`, `NewExternalApp`, `PrincipalSystem`, `PrincipalAnonymous`, `SetUserDetailsType`, `SetExternalAppDetailsType`, `IsReserved` |
 | JWT | `JWT`, `JWTConfig`, `JWTClaimsBuilder`, `JWTClaimsAccessor`, `NewJWT`, `GenerateSecret`, token type constants, `DefaultJWTAudience`, `DefaultJWTSecret`, `JWTIssuer` |
 | auth manager | `Authentication`, `AuthTokens`, `Authenticator`, `AuthManager`, `TokenGenerator`, `UserLoader`, `ExternalAppLoader`, `ExternalAppConfig`, `PasswordDecryptor` |
 | challenge tokens | `ChallengeProvider`, `ChallengeState`, `ChallengeTokenStore`, `NewMemoryChallengeTokenStore`, `NewRedisChallengeTokenStore`, `NewJWTChallengeTokenStore` |
@@ -52,6 +52,15 @@ audience, validates `iat` when present, requires `exp`, and applies a
 | roles | `rls` |
 | details | `det` |
 
+JWT signing always uses `HS256` (`HMAC-SHA256` in JWT terminology). The signature
+authenticator in `security/signature.go` supports three algorithms:
+
+| Algorithm | Constant | Context |
+| --- | --- | --- |
+| `HMAC-SHA256` | `SignatureAlgHmacSHA256` | Signature authenticator (default) |
+| `HMAC-SHA512` | `SignatureAlgHmacSHA512` | Signature authenticator |
+| `HMAC-SM3` | `SignatureAlgHmacSM3` | Signature authenticator |
+
 The built-in access and refresh token generator stores the subject as
 `id@name`. `JWTTokenAuthenticator` rebuilds a user principal from that subject
 without a database lookup. `JWTRefreshAuthenticator` also expects `id@name`,
@@ -77,6 +86,16 @@ should be treated as startup-only configuration. Unknown principal types keep
 set to `nil`. The built-in special principals are `PrincipalSystem`
 (`type: "system"`, id `system`, name `系统`) and `PrincipalAnonymous`
 (`type: "user"`, id `anonymous`, name `匿名`).
+
+`Principal.IsReserved()` reports whether a principal claims a
+framework-internal identity. It returns `true` when the principal type is
+`system`, or when the principal `ID` equals `orm.OperatorSystem`
+(`"system"`) or `orm.OperatorCronJob` (`"cron_job"`). `PrincipalAnonymous`
+is deliberately not reserved, because it represents the absence of an
+identity and is legitimately produced by the `public` auth strategy. The
+framework enforces the reserved-identity invariant at the authentication
+boundary, token issuance, and the challenge flow; see
+[Authentication: Reserved Identities](./authentication#reserved-identities).
 
 ## Challenge providers
 
@@ -127,6 +146,32 @@ rejected with `ErrTokenInvalid` (a challenge token carrying the framework's
 internal identity has no legitimate origin), and a parsed principal that
 reports `IsReserved()` is rejected as well.
 
+### Challenge Claim Keys
+
+The `JWTChallengeTokenStore` encodes challenge state as compact JWT claims.
+The following claim keys appear in challenge tokens and in the standard
+`JWTClaimsBuilder`/`JWTClaimsAccessor`:
+
+| Claim Key | Constant | Holds |
+| --- | --- | --- |
+| `det` | (standard JWT claim) | User details (`claimDetails`) — application-defined payload, carried in both access tokens and challenge tokens |
+| `pnd` | `ClaimChallengePending` | Pending challenge types in evaluation order — the remaining types that have not yet been evaluated |
+| `pnm` | `ClaimChallengePrincipalName` | Principal display name — stored as a separate claim because the subject (`sub`) carries only the principal ID |
+| `ptp` | `ClaimChallengePrincipalType` | Principal type — `user` or `external_app`; `system` is rejected during challenge token parsing |
+| `rls` | (standard JWT claim) | User roles (`claimRoles`) — carried in access tokens and challenge tokens |
+| `rsd` | `ClaimChallengeResolved` | Resolved challenge types in resolution order — the types that have already been satisfied |
+
+The standard JWT claims (`jti`, `sub`, `iss`, `aud`, `iat`, `nbf`, `exp`, `typ`)
+are set by `JWT.Generate` and validated by `JWT.Parse` with issuer `JWTIssuer`
+(`vef`), audience `DefaultJWTAudience` (`vef-app`), 10-second `leeway`, and
+`HS256` signing.
+
+Challenge tokens carry `typ: "challenge"` and expire after
+`ChallengeTokenExpires` (`5m`). The `sub` claim holds only the principal ID;
+`pnm` holds the display name. `det` and `rls` mirror the standard access-token
+claims so the challenge flow can reconstruct the principal without a database
+lookup.
+
 Challenge providers are sorted by `Order()` in ascending order. The built-in
 convenience providers use `100` for TOTP, `200` for SMS, `300` for email, `400`
 for password change, and `500` for department selection. Providers that are not
@@ -158,10 +203,19 @@ change is required. Common reason constants are `PasswordChangeReasonFirstLogin`
 (`first_login`) and `PasswordChangeReasonExpired` (`expired`). The concrete provider type is
 `PasswordChangeChallengeProvider`.
 `NewDepartmentSelectionChallengeProvider` uses `DepartmentLoader` and
-`DepartmentSelector`; an empty department list skips the challenge, while
-resolve expects a department ID string. `DepartmentSelectionChallengeData`
-serializes as `departments` plus optional `meta`; each `DepartmentOption`
-serializes as `id` and `name`.
+`DepartmentSelector`; resolve expects a department ID string.
+`DepartmentLoader.LoadDepartments` returns
+`*DepartmentSelectionChallengeData` so the host controls both the selectable
+options and the challenge-scoped metadata around them. A nil return, or data
+carrying no departments, skips the challenge.
+
+`DepartmentSelectionChallengeData` serializes as `departments` plus optional
+`meta`; each `DepartmentOption` serializes as `id`, `name`, and optional
+`meta`. The loader's full payload is forwarded as-is — the framework does not
+rebuild it, so both per-option `Meta` (owning organization, parent id for tree
+rendering) and challenge-level `Meta` (the organization tree, default
+selection, grouping definitions) reach the client. Neither level is read,
+validated, or persisted by the framework.
 
 The challenge constructors are wiring-time APIs. `NewOTPChallengeProvider`
 panics when `ChallengeType`, `Evaluator`, or `Verifier` is missing.
@@ -233,7 +287,7 @@ authentication, `1030`–`1039` for challenges, and `1050` for password policy
 | `1004` | `ErrCodeTokenNotValidYet` | `ErrTokenNotValidYet` | `401` |
 | `1005` | `ErrCodeTokenInvalidIssuer` | `ErrTokenInvalidIssuer` | `401` |
 | `1006` | `ErrCodeTokenInvalidAudience` | `ErrTokenInvalidAudience` | `401` |
-| `1007` | `ErrCodePrincipalInvalid` | `ErrPrincipalInvalid(message)` | `401` |
+| `1007` | `ErrCodePrincipalInvalid` | `ErrPrincipalInvalid(message)`, `ErrReservedPrincipal` | `401` |
 | `1008` | `ErrCodeCredentialsInvalid` | `ErrCredentialsInvalid(message)` | `401` |
 | `1009` | `ErrCodeAppIDRequired` | `ErrAppIDRequired` | `401` |
 | `1010` | `ErrCodeTimestampRequired` | `ErrTimestampRequired` | `401` |
@@ -290,6 +344,22 @@ Public i18n message ID constants include `ErrMessageChallengeResolveFailed`,
 `ErrMessageUnauthenticated`, `ErrMessageUnsupportedAuthenticationType`,
 `ErrMessageUserInfoLoaderNotImplemented`, and
 `ErrMessageUserLoaderNotImplemented`.
+
+### Error Message Constants
+
+The `security` package exposes i18n message ID constants for callers that
+construct errors directly (template arguments, factory-based `result.Err`,
+Fiber error mapping):
+
+| Constant | Message ID | Triggered by |
+| --- | --- | --- |
+| `ErrMessageUnauthenticated` | `security_unauthenticated` | `ErrUnauthenticated` — sentinel returned when no bearer token is present |
+| `ErrMessageExternalAppLoaderNotImplemented` | `security_external_app_loader_not_implemented` | `SignatureAuthenticator.Authenticate` when `ExternalAppLoader` is nil |
+| `ErrMessageCredentialsFormatInvalid` | `security_credentials_format_invalid` | `SignatureAuthenticator.Authenticate` when credentials are not `*SignatureCredentials` |
+| `ErrMessageUnsupportedAuthenticationType` | `security_unsupported_authentication_type` | `AuthManager.Authenticate` when no authenticator supports the given `type` |
+| `ErrMessageUserLoaderNotImplemented` | `security_user_loader_not_implemented` | `JWTRefreshAuthenticator.Authenticate` when `UserLoader` is nil |
+| `ErrMessageUserInfoLoaderNotImplemented` | `security_user_info_loader_not_implemented` | `AuthResource.GetUserInfo` when `UserInfoLoader` is nil |
+| `ErrMessageChallengeResolveFailed` | `security_challenge_resolve_failed` | `resolve_challenge` normalizes bare errors from `ChallengeProvider.Resolve` |
 
 ## RPC Resource: `security/auth`
 
@@ -369,7 +439,7 @@ tokens are issued yet:
 | Field | Type | Description |
 | --- | --- | --- |
 | `type` | `string` | challenge type wire value, e.g. `totp`, `sms_otp`, `password_change` (see [the wire-value table](#challenge-providers)) |
-| `data` | `any` | provider-specific presentation data; omitted when the provider supplies none. The OTP providers return `{destination, meta?}` (`OTPChallengeData`); department selection returns `{departments, meta?}` |
+| `data` | `any` | provider-specific presentation data; omitted when the provider supplies none. The OTP providers return `{destination, meta?}` (`OTPChallengeData`); department selection returns `{departments, meta?}` where each department entry carries `{id, name, meta?}` and the top-level `meta` carries challenge-scoped display data such as the organization tree |
 | `required` | `bool` | whether the challenge must be resolved to finish the login |
 
 ```json
@@ -403,7 +473,9 @@ Behavior notes:
   a nil principal or empty stored hash, and a wrong password, HTTP 401),
   `1007` (reserved or invalid principal, HTTP 401), `1023` (account locked
   by the brute-force guard, HTTP 429), and the generic `1400` validation
-  error for missing required fields (HTTP 400).
+  error for missing required fields (HTTP 400). A reserved-principal
+  rejection is audited but not counted toward lockout, because the fault
+  lies with the authenticator, not the caller.
 
 ### `refresh`
 

@@ -132,23 +132,36 @@ cannot distinguish which part failed.
 
 Certain identities attribute work the framework performs outside any request
 — they are audit authors, never callers. `security.Principal.IsReserved()`
-reports them: the `system` principal type and the `orm.OperatorSystem` /
-`orm.OperatorCronJob` operator IDs.
+reports them:
 
-The framework enforces this invariant fail-closed at every
-boundary:
+- the `system` principal type (`PrincipalTypeSystem`);
+- a principal whose `ID` equals `orm.OperatorSystem` (`"system"`);
+- a principal whose `ID` equals `orm.OperatorCronJob` (`"cron_job"`).
 
-- authenticators (including custom `security.Authenticator` implementations
-  and challenge providers) that resolve to a nil or reserved principal are
-  rejected at the authentication boundary;
-- token issuance and the challenge flow refuse to mint tokens for reserved
-  identities (`security_reserved_principal_forbidden`, HTTP 401).
+`PrincipalAnonymous` is deliberately **not** reserved: it denotes the absence
+of an identity, which the `public` auth strategy produces legitimately.
 
-The built-in password login additionally refuses `anonymous` as a login
-identifier (it denotes the absence of an identity, which only the public
-strategy may produce). Custom `UserLoader`, `APIKeyLoader`, and similar
-implementations must never return principals whose ID collides with the
-reserved operator IDs.
+The framework enforces this invariant fail-closed at every boundary:
+
+- **Authentication boundary**: the API auth middleware rejects any strategy
+  that returns a nil or reserved principal with `security.ErrReservedPrincipal`
+  (code `1007`, HTTP 401).
+- **Token issuance**: both `JWTTokenGenerator` and `OpaqueTokenGenerator`
+  refuse to mint tokens for reserved principals.
+- **Challenge flow**: challenge-token parsing rejects reserved principal
+  types and reserved IDs as `ErrTokenInvalid`; after a challenge provider
+  resolves, `resolve_challenge` refuses a reserved result with
+  `ErrReservedPrincipal`.
+
+The built-in password login additionally refuses the reserved identifiers
+(`system`, `cron_job`, and `anonymous`) as a login `principal`. Custom
+`UserLoader`, `APIKeyLoader`, and similar identity sources must never return
+principals whose ID collides with the reserved operator IDs.
+
+Reserved-principal rejections are **audited but not counted toward login
+lockout**: the credential may have been correct, so the fault lies with the
+authenticator or challenge provider, not the caller. See
+[Login Hardening](./login-hardening) for the lockout behavior.
 
 ## Public Operations
 

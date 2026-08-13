@@ -109,7 +109,7 @@ When a node has multiple assignees:
 
 The enum type is `ApprovalMethod`.
 
-### Pass Rules (for Parallel)
+### Pass Rules
 
 | Rule | Constant | Wire value | Behavior |
 | --- | --- | --- | --- |
@@ -127,10 +127,10 @@ and return a `PassRuleResult` (`PassRulePending`, `PassRulePassed`,
 | --- | --- | --- | --- |
 | User | `AssigneeUser` | `user` | Specific users |
 | Role | `AssigneeRole` | `role` | Users with a role |
-| Department | `AssigneeDepartment` | `department` | Department head |
+| Department | `AssigneeDepartment` | `department` | Leaders of the configured departments |
 | Self | `AssigneeSelf` | `self` | The applicant |
 | Superior | `AssigneeSuperior` | `superior` | Direct superior |
-| Dept Leader | `AssigneeDepartmentLeader` | `department_leader` | Multi-level supervisor chain |
+| Dept Leader | `AssigneeDepartmentLeader` | `department_leader` | Leaders of the applicant's own department (single-level lookup) |
 | Form Field | `AssigneeFormField` | `form_field` | Determined by a form field value |
 
 The enum type is `AssigneeKind`. Dynamic assignee insertion uses
@@ -193,7 +193,6 @@ context sees nothing — the resolution is fail-closed.
 | `DefaultHandleApprovalMethod` | `ApprovalSequential` |
 | `DefaultHandlePassRule` | `PassAny` |
 | `DefaultUrgeCooldownMinutes` | `30` |
-| `DefaultTenantID` | `"default"` |
 
 ## Flow Definition (React Flow Compatible)
 
@@ -236,7 +235,7 @@ Node `data` fields are:
 | `EndNodeData` | base fields only |
 | `TaskNodeData` | `assignees`, `executionType`, `emptyAssigneeAction`, `fallbackUserIds`, `adminUserIds`, `isTransferAllowed`, `isOpinionRequired`, `timeoutHours`, `timeoutAction`, `timeoutNotifyBeforeHours`, `urgeCooldownMinutes`, `ccs`, `fieldPermissions` |
 | `ApprovalNodeData` | base fields + `TaskNodeData` fields + `approvalMethod`, `passRule`, `passRatio`, `sameApplicantAction`, `consecutiveApproverAction`, `rollbackType`, `rollbackDataStrategy`, `rollbackTargetKeys`, `isRollbackAllowed`, `isAddAssigneeAllowed`, `addAssigneeTypes`, `isRemoveAssigneeAllowed`, `isManualCcAllowed` |
-| `HandleNodeData` | base fields + `TaskNodeData` fields; if unset, deploy defaults `approvalMethod` to `sequential` and `passRule` to `any` |
+| `HandleNodeData` | base fields + `TaskNodeData` fields; deploy always sets `approvalMethod` to `sequential` and `passRule` to `any` (handle nodes expose no such wire fields) |
 | `CCNodeData` | base fields + `ccs`, `isReadConfirmRequired`, `fieldPermissions` |
 | `ConditionNodeData` | base fields + `branches` |
 
@@ -302,23 +301,55 @@ are single-level. On the table field itself, `validation.minLength` /
 `maxLength` bound the row count and `isRequired` means at least one row.
 
 `validation` supports `minLength`, `maxLength`, `min`, `max`, `pattern`, and
-`message`. Submitted `formData` is capped at 64 KiB after JSON encoding, even
+`message`. Submitted `formData` is capped by `vef.approval.form_data_max_bytes`
+after JSON encoding (default 64 KiB via `config.DefaultFormDataMaxBytes`), even
 when the flow has no form schema. When a schema exists, extra form keys are
 rejected; required fields reject absent, `null`, blank-string, and empty-array
 values. `input`, `textarea`, and `date` fields must be strings and may use
 `minLength`, `maxLength`, and `pattern`. `number` fields accept numeric JSON
-values and may use `min` and `max`. `select` fields validate scalar or array
+values and may use `min` and `max`; a `number` field whose `columnType` is
+`integer` additionally rejects fractional values. `select` fields validate scalar or array
 values against `options` when options are present. `upload` fields accept a
 non-blank string, a non-empty `[]string`, or a non-empty array of non-blank
 strings. `validation.message` is used as the custom error message for
 `pattern` mismatches; other validation failures use the module i18n messages.
+
+## Flow Validation
+
+### Initiator Rules
+
+`isAllInitiationAllowed` and `initiators` are **mutually exclusive**: when
+`isAllInitiationAllowed` is `true`, submitting initiator rules returns
+`ErrInitiatorsNotAllowed` (code `40022`). When restricted, at least one
+initiator rule with at least one ID is required — an empty rule set or a rule
+whose `ids` is empty returns `ErrInitiatorsRequired` (code `40023`), because
+a rule that selects nobody leaves the flow just as unstartable as no rule at
+all.
+
+### Business Binding Schema
+
+Flows use `BindingMode` to decide how form/instance data is associated with
+business data:
+
+- `BindingStandalone` (wire value `standalone`) — form data lives in approval
+  tables (the default).
+- `BindingBusiness` (wire value `business`) — the flow is bound to an existing
+  business row via `BusinessBindingConfig`.
+
+Business-bound flows (`BindingMode = business`) are validated against the live
+database schema at save time. When the configured `tableName` does not exist,
+`ErrBindingTableMissing(tableName)` is returned (code `40018`,
+`ErrCodeBindingSchemaInvalid`). When a configured column does not exist in the
+table, `ErrBindingColumnMissing(columnName)` is returned (same code). Both
+name the missing object so operators can fix the configuration without
+inspecting the schema themselves.
 
 ## Flow Models and Designer Enums
 
 Flow design and persistence models exposed by the public package include
 `FlowCategory`, `Flow`, `FlowVersion`, `FlowNode`, `FlowEdge`, `FlowInitiator`,
 `FlowNodeAssignee`, `FlowNodeCC`, `FormFieldDefinition`,
-`FormSnapshot`, `ActionLog`, `OperatorInfo`, and `UrgeRecord` (there is no
+`FormSnapshot`, `ActionLog`, `UserInfo`, and `UrgeRecord` (there is no
 structured `FormDefinition` wrapper — the host document is opaque
 and only `FormFieldDefinition` is a framework shape). Flow-version
 status uses `VersionStatus`: `VersionDraft` (`draft`), `VersionPublished`
@@ -340,6 +371,14 @@ Additional flow-designer enums:
 | `FieldKind` | `input`, `textarea`, `select`, `number`, `date`, `upload`, `table` |
 | `ColumnDataType` | `string`, `text`, `integer`, `decimal`, `boolean`, `date`, `datetime`, `json` |
 | `Permission` | `visible`, `editable`, `hidden`, `required` |
+
+### Initiator-Rule Validation
+
+Initiator rules are validated when a flow is created or updated:
+
+- If `isAllInitiationAllowed` is `true`, no `initiators` may be supplied (`ErrInitiatorsNotAllowed`, code `40022`).
+- If `isAllInitiationAllowed` is `false`, at least one initiator rule with a non-empty `ids` list must be provided (`ErrInitiatorsRequired`, code `40023`).
+- Every individual rule must select at least one user, role, or department.
 
 ---
 

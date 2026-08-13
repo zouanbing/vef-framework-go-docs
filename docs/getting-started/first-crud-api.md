@@ -68,7 +68,7 @@ Two embedded types do the heavy lifting:
 - `bun.BaseModel` binds the struct to the `app_product` table with alias `ap`
 - `orm.FullAuditedModel` contributes `ID`, `CreatedAt`, `CreatedBy`, `CreatedByName`, `UpdatedAt`, `UpdatedBy`, and `UpdatedByName`
 
-You never assign these framework-owned fields yourself. On insert, the framework generates a compact string ID for an empty string primary key and fills `created_at` / `created_by`; on update it maintains `updated_at` / `updated_by` using the current principal. The base model catalog is covered in [Models](../data-access/models.md).
+You never assign these framework-owned fields yourself. On insert, the framework generates a compact string ID for an empty string primary key, fills `created_at` / `created_by`, and initializes `updated_at` / `updated_by`; on update it maintains `updated_at` / `updated_by` using the current principal. The base model catalog is covered in [Models](../data-access/models.md).
 
 ## 2. Create the table
 
@@ -244,10 +244,10 @@ enabled = true
 
 [[vef.event.routing]]
 pattern = "vef.storage.*"
-transports = ["outbox"]
+transports = ["outbox", "memory"]
 ```
 
-The last two blocks are new compared to the quick start. The generic write operations run the [file storage](../infrastructure/storage.md) lifecycle inside their transactions, and storage publishes its domain events through a transactional transport — the framework fails fast at startup if `vef.storage.*` events have no such route. Enabling the outbox transport (it creates its own table automatically) and routing storage events to it satisfies the check.
+The last two blocks are new compared to the quick start. The generic write operations run the [file storage](../infrastructure/storage.md) lifecycle inside their transactions, and storage publishes its domain events through a transactional transport — the framework fails fast at startup if `vef.storage.*` events have no such route. Enabling the outbox transport (it creates its own table automatically) and routing storage events through it satisfies the check; the route lists `"memory"` — the outbox's default sink — alongside `"outbox"` so the events stay subscribable in-process.
 
 Start the app:
 
@@ -293,7 +293,7 @@ As in the quick start, messages follow the framework's default language; set `VE
 
 ### Find page
 
-Filters come from `params` (your `ProductSearch`), pagination from `meta`:
+Filters come from `params` (your `ProductSearch`), pagination from `meta`. Omitted values fall back to `page` 1 and `size` 15, and `size` is capped at 1000:
 
 ```bash
 curl http://localhost:8080/api \

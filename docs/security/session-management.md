@@ -178,6 +178,10 @@ type SessionRevocationListener interface {
 }
 ```
 
+| API | Contract |
+| --- | --- |
+| `security.NewSessionRevocationNotifier(listeners []SessionRevocationListener) *SessionRevocationNotifier` | builds a notifier over the registered listeners, dropping nil entries; injected by DI |
+
 - Register with `vef.ProvideSessionRevocationListener(...)`. Each
   `SessionRevocation` carries `SessionID` and `UserID`.
 - The framework fires listeners from its own revocation paths. Application

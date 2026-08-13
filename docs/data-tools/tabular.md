@@ -245,6 +245,9 @@ employees, rowErrors, err := imp.Import(reader) // employees is []Employee, no a
 
 exp := csv.NewTypedExporterFor[Employee]()
 buf, err := exp.Export(employees)               // accepts []Employee directly
+
+// Excel has the same typed wrappers:
+// exp := excel.NewTypedExporterFor[Employee]()
 ```
 
 `TypedImporter[T]` / `TypedExporter[T]` wrap the underlying `tabular.Importer` / `tabular.Exporter`. Use `TypedImporter.Inner` / `TypedExporter.Inner` if you need to call `RegisterParser` / `RegisterFormatter` directly on the inner instance. If the wrapped importer ever returns rows whose element type doesn't match `T`, the typed wrapper returns `ErrTypedRowMismatch`.
@@ -253,7 +256,11 @@ buf, err := exp.Export(employees)               // accepts []Employee directly
 
 ## Dynamic (Map-Backed) Usage
 
-Dynamic columns let you build a schema at runtime without declaring a struct. Describe each column with `tabular.ColumnSpec`:
+Dynamic columns let you build a schema at runtime without declaring a struct. The map-backed
+factories are `csv.NewMapImporter(specs, mapOpts, opts...)`, `csv.NewMapExporter(specs, opts...)`,
+and `excel.NewMapImporter(specs, mapOpts, opts...)`, `excel.NewMapExporter(specs, opts...)`. Pass
+`nil` for `mapOpts` when no `MapAdapter` options (e.g. row validators) are needed. Describe each
+column with `tabular.ColumnSpec`:
 
 ```go
 import (
@@ -521,19 +528,74 @@ type ExportError struct {
 
 | Error | When it appears |
 | --- | --- |
-| `ErrDataMustBeSlice` | Export argument is not a slice |
-| `ErrSchemaMismatch` | Element type doesn't match the adapter's schema (struct vs map vs other) |
-| `ErrUnknownColumn` | Caller addresses a column that isn't in the schema |
-| `ErrRequiredMissing` | A `Required` cell is empty during dynamic import |
-| `ErrNoDataRowsFound` | No data rows remain after skip-rows and optional header handling |
-| `ErrDuplicateHeaderName` | Header row contains a duplicate non-empty header, or a dynamic schema resolves two columns to the same name |
-| `ErrDuplicateColumnKey` | A dynamic `ColumnSpec` slice has two entries with the same `Key` |
-| `ErrUnsetField` | Struct field cannot be set (typically unexported) |
-| `ErrMissingColumnKey` / `ErrMissingColumnType` | `ColumnSpec` is missing required attributes |
-| `ErrTypedRowMismatch` | A `TypedImporter[T]` / `TypedExporter[T]` received rows whose element type isn't `T` |
-| `ErrUnsupportedType` | The default parser was asked to parse into a Go type it doesn't know how to handle |
+| `tabular.ErrDataMustBeSlice` | Export argument is not a slice |
+| `tabular.ErrSchemaMismatch` | Element type doesn't match the adapter's schema (struct vs map vs other) |
+| `tabular.ErrUnknownColumn` | Caller addresses a column that isn't in the schema |
+| `tabular.ErrRequiredMissing` | A `Required` cell is empty during dynamic import |
+| `tabular.ErrNoDataRowsFound` | No data rows remain after skip-rows and optional header handling |
+| `tabular.ErrDuplicateHeaderName` | Header row contains a duplicate non-empty header, or a dynamic schema resolves two columns to the same name |
+| `tabular.ErrDuplicateColumnKey` | A dynamic `ColumnSpec` slice has two entries with the same `Key` |
+| `tabular.ErrUnsetField` | Struct field cannot be set (typically unexported) |
+| `tabular.ErrMissingColumnKey` / `tabular.ErrMissingColumnType` | `ColumnSpec` is missing required attributes |
+| `tabular.ErrTypedRowMismatch` | A `TypedImporter[T]` / `TypedExporter[T]` received rows whose element type isn't `T` |
+| `tabular.ErrUnsupportedType` | The default parser was asked to parse into a Go type it doesn't know how to handle |
 
 `excel.ErrSheetIndexOutOfRange` is the one driver-specific sentinel — see [Excel → Error Handling](./excel#error-handling).
+
+## CSV Options
+
+### Import Options
+
+`csv.ImportOption` configures the CSV importer behavior:
+
+| Option | Behavior |
+| --- | --- |
+| `csv.WithImportDelimiter(delimiter)` | Sets the field delimiter (default: comma). |
+| `csv.WithComment(comment)` | Sets the comment character; lines beginning with this rune are skipped. |
+| `csv.WithSkipRows(n)` | Skips the first n rows before reading the header or data. Negative values are clamped to zero. |
+| `csv.WithoutHeader()` | Treats the first non-skipped row as data instead of headers. Columns are mapped to source positions in schema order. |
+| `csv.WithoutTrimSpace()` | Disables leading/trailing whitespace trimming on cell values. Trimming is enabled by default. |
+
+### Export Options
+
+`csv.ExportOption` configures the CSV exporter behavior:
+
+| Option | Behavior |
+| --- | --- |
+| `csv.WithExportDelimiter(delimiter)` | Sets the field delimiter for export (default: comma). |
+| `csv.WithoutWriteHeader()` | Suppresses the header row in the exported CSV output. |
+| `csv.WithCRLF()` | Enables Windows-style CRLF line endings for compatibility with legacy systems. |
+
+### CSV Driver Internals
+
+The CSV importer reads the whole file into memory with the standard-library reader's `ReadAll()`
+after setting `FieldsPerRecord = -1`, so rows with variable column counts are
+tolerated. Whitespace trimming is performed by the shared tabular layer when
+trim is enabled (the CSV reader's own `TrimLeadingSpace` is not used). The CSV
+exporter flushes the writer after writing the header and data; any flush error
+is returned as `flush CSV writer: ...`.
+
+## Excel Options
+
+### Import Options
+
+`excel.ImportOption` configures the Excel importer behavior:
+
+| Option | Behavior |
+| --- | --- |
+| `excel.WithImportSheetName(name)` | Selects the worksheet to import by name. When set, takes precedence over `WithImportSheetIndex`. |
+| `excel.WithImportSheetIndex(index)` | Selects the worksheet to import by 0-based index (default: 0). Ignored when `WithImportSheetName` is set. |
+| `excel.WithSkipRows(n)` | Skips the first n rows before reading the header or data. Negative values are clamped to zero. |
+| `excel.WithoutHeader()` | Treats the first non-skipped row as data instead of headers. |
+| `excel.WithoutTrimSpace()` | Disables leading/trailing whitespace trimming on cell values. Trimming is enabled by default. |
+
+### Export Options
+
+`excel.ExportOption` configures the Excel exporter behavior:
+
+| Option | Behavior |
+| --- | --- |
+| `excel.WithSheetName(name)` | Sets the worksheet name (default: `"Sheet1"`). |
 
 ## CRUD Integration
 

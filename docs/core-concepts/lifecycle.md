@@ -14,15 +14,15 @@ This is the canonical statement of the VEF boot pipeline. It is assembled from
 `vef.Run` and the `internal/apptest` test harness, so the two graphs cannot
 drift):
 
-`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> outbox -> redis-stream -> inbox -> schema -> monitor -> mcp -> push -> app`
+`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> tx_memory -> outbox -> redis-stream -> inbox -> schema -> monitor -> mcp -> push -> app`
 
 `datasource` is a single step: it connects `*sql.DB` (via `internal/database`)
 and wraps it into `orm.DB` (via `internal/orm`) in one module — there is no
-separate `database` or `orm` boot step. `outbox`, `redis-stream`, and `inbox`
-are the event transport submodules — the outbox transport module, the
-redis-stream transport module, and the inbox module — registered after
-`sequence` and before `schema`. `js` is the shared JS engine module and
-`push` is the WebSocket push module.
+separate `database` or `orm` boot step. `tx_memory`, `outbox`, `redis-stream`,
+and `inbox` are the event transport submodules — the tx_memory transport module,
+the outbox transport module, the redis-stream transport module, and the inbox
+module — registered after `sequence` and before `schema`. `js` is the shared
+JS engine module and `push` is the WebSocket push module.
 
 Note the list order is for readability: FX resolves the actual construction
 order from declared dependencies, so what matters is the dependency shape —
@@ -30,8 +30,8 @@ order from declared dependencies, so what matters is the dependency shape —
 - config feeds everything
 - datasource feeds API handlers that need `orm.DB`
 - security feeds authenticated API requests
-- the event transport submodules (outbox, redis-stream, inbox) build on the
-  core `event` module
+- the event transport submodules (tx_memory, outbox, redis-stream, inbox)
+  build on the core `event` module
 - storage, monitor, schema, MCP, and push are all wired before the app starts
   listening
 
@@ -96,19 +96,20 @@ That is why middleware ordering in VEF has two layers:
 
 From the current middleware module, the common order is:
 
-- compression
-- headers
-- CORS
-- content type checks
-- request ID
-- request logger binding
-- panic recovery
-- request record logging
+- compression (`-1000`)
+- headers (`-900`)
+- CORS (`-800`)
+- body-encoding (`-750`, decodes an opt-in `X-Body-Encoding` request body back to raw JSON before the guard/parse, scoped to `/api`)
+- content type (`-700`, JSON/multipart guard, scoped to `/api`)
+- request ID (`-650`)
+- request logger binding (`-600`)
+- panic recovery (`-500`)
+- request record logging (`-100`)
 - API routes
-- push WebSocket endpoint (order 450; the integration inbound gateway sits at 400 when that module is enabled)
-- MCP endpoint middleware (order 500)
-- storage proxy routes (order 900)
-- SPA fallback middleware (order 1000)
+- push WebSocket endpoint (order `450`; the integration inbound gateway sits at `400` when that module is enabled)
+- MCP endpoint middleware (order `500`)
+- storage proxy routes (order `900`)
+- SPA fallback middleware (order `1000`)
 
 The important consequence is that app middleware can run even for requests that never reach the API engine.
 

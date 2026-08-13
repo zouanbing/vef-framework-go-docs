@@ -59,9 +59,10 @@ type Contract struct {
 ```
 
 Schema 必须是自包含的 JSON Schema 文档（draft 2020-12），在保存时编译
-（`ErrInvalidSchema`），坏掉的契约永远不会进入调用。两个流向中，输入都在
-适配器脚本运行前校验、脚本返回值都在运行后校验——适配器不可能把不符合契约的
-模型交给业务代码。
+（`ErrInvalidSchema`），坏掉的契约永远不会进入调用。出站流向在适配器脚本运行前
+校验输入、运行后校验脚本返回值。入站流向在 `dispatch` 处强制 Schema：输入在业务
+处理器运行前校验，处理器输出在返回脚本前校验（面向厂商的应答本身不做 Schema
+校验）。两个流向中，适配器都不可能把不符合契约的模型交给业务代码。
 
 `Labels` 由引擎存储和过滤，但从不解释。校验走共享的 `orm.ValidateLabels`
 （与审批流程 labels 同一套规则）：键为字母数字加内部 `-`/`_`（不允许点号——
@@ -95,6 +96,16 @@ type System struct {
 - `TimeoutMs` 约束每次 HTTP 调用；适配器上的 `timeoutMs` 约束整个脚本运行
   （另一个维度，为 0 时继承 `vef.integration.run_timeout`）。
 
+### 数据源模式
+
+`DataSourceMode` 控制系统直连数据库的脚本写权限。空模式默认只读。
+
+| 符号 | 值 | 含义 |
+| --- | --- | --- |
+| `DataSourceMode` | `string` | 声明适配器脚本可对系统数据库执行到何种程度的类型 |
+| `DataSourceModeReadOnly` | `read_only` | 脚本只能查询（`sql.queryList` / `sql.queryOne`）；`sql.execute` 抛错 |
+| `DataSourceModeReadWrite` | `read_write` | 脚本还可以通过 `sql.execute` 写入 |
+
 ### 静态存储的密文
 
 敏感认证参数值与数据源密码使用 `vef.integration.secret_key` 中的密钥加密
@@ -120,6 +131,15 @@ type Adapter struct {
 一个系统对一个契约在每个方向上恰好用一个适配器实现。两个方向的脚本环境不同，
 分别见[出站调用](./outbound#适配器脚本环境)与
 [入站投递](./inbound#适配器脚本环境)。
+
+### 方向（Direction）
+
+`Direction` 选择适配器实现的流向。
+
+| 符号 | 值 | 含义 |
+| --- | --- | --- |
+| `DirectionOutbound` | `outbound` | 业务代码调用外部系统 |
+| `DirectionInbound` | `inbound` | 外部系统调入你的应用 |
 
 ## 路由（Route）
 
@@ -171,18 +191,18 @@ HTTP 线上追踪——按 `vef.integration.log` 掩码（凭证头始终掩码�
 `integration.FailureKind` 是调用日志、统计与 API 错误共享的唯一失败词汇表；
 空值表示成功。
 
-| 类别 | 含义 |
-| --- | --- |
-| `input_invalid` | 输入在脚本运行前被契约输入 Schema 拒绝 |
-| `output_invalid` | 脚本返回值被输出 Schema 拒绝 |
-| `upstream` | 外部系统自身报告的失败（`errors.upstream(...)`） |
-| `transport` | 线上调用未完成（连接拒绝、TLS 失败） |
-| `timeout` | 调用超过运行超时 |
-| `canceled` | 调用方取消了调用 |
-| `script` | 未捕获的脚本异常或编译错误——适配器缺陷 |
-| `config` | 认证 scheme 未注册、凭证无法解密等配置故障 |
-| `auth` | 入站投递被入站认证验证拒绝 |
-| `handler` | 入站业务处理器在分发成功后返回错误——业务失败 |
+| 常量 | 类别 | 含义 |
+| --- | --- | --- |
+| `FailureInputInvalid` | `input_invalid` | 输入在脚本运行前被契约输入 Schema 拒绝 |
+| `FailureOutputInvalid` | `output_invalid` | 脚本返回值被输出 Schema 拒绝 |
+| `FailureUpstream` | `upstream` | 外部系统自身报告的失败（`errors.upstream(...)`） |
+| `FailureTransport` | `transport` | 线上调用未完成（连接拒绝、TLS 失败） |
+| `FailureTimeout` | `timeout` | 调用超过运行超时 |
+| `FailureCanceled` | `canceled` | 调用方取消了调用 |
+| `FailureScript` | `script` | 未捕获的脚本异常或编译错误——适配器缺陷 |
+| `FailureConfig` | `config` | 认证 scheme 未注册、凭证无法解密等配置故障 |
+| `FailureAuth` | `auth` | 入站投递被入站认证验证拒绝 |
+| `FailureHandler` | `handler` | 入站业务处理器在分发成功后返回错误——业务失败 |
 
 ## 统计
 
@@ -195,43 +215,58 @@ Invoker 实现 `integration.StatsInspector`：进程启动以来按
 `maxDurationMs`、`lastError`、`lastErrorAt`。被验证拒绝的入站投递聚合在空
 `contract` 下——拒绝时契约编码还只是未验证的调用方输入。
 
+## 路由诊断
+
+`diagnose_routes` 操作按需计算路由表的配置缺口（`RouteDiagnostics`）。
+每个发现项携带一个 `RouteFindingKind`。
+
+| 符号 | 值 | 含义 |
+| --- | --- | --- |
+| `RouteFindingKind` | `string` | 路由诊断发现项的分类类型 |
+| `RouteFindingDanglingAdapter` | `dangling_adapter` | 契约限定路由的目标系统对该契约没有已启用适配器 |
+| `RouteFindingWildcardGap` | `wildcard_gap` | 已启用契约无法由通配（或默认）路由服务，因为目标系统对它没有已启用适配器 |
+| `RouteFindingDisabledSystem` | `disabled_system` | 已启用路由指向被禁用的系统 |
+| `RouteFindingDisabledContract` | `disabled_contract` | 已启用路由限定到被禁用的契约 |
+| `RouteFindingUncoveredContract` | `uncovered_contract` | 已启用契约在路由表现有的某个键下解析不到任何规则 |
+
 ## 错误码
 
 集成 API 错误使用响应码 `2600`–`2699`，除注明外均以 HTTP 200 承载、失败由
 响应体 code 表达。
 
-| 码 | 错误 | 含义 |
-| --- | --- | --- |
-| `2600` | `ErrContractNotFound` | 契约不存在 |
-| `2601` | `ErrContractDisabled` | 契约被禁用 |
-| `2602` | `ErrSystemNotFound` | 系统不存在 |
-| `2603` | `ErrSystemDisabled` | 系统被禁用 |
-| `2604` | `ErrAdapterNotFound` | 该方向上没有适配器将系统绑定到契约 |
-| `2605` | `ErrAdapterDisabled` | 适配器被禁用 |
-| `2606` | `ErrRouteNotFound` | 路由键未匹配任何规则 |
-| `2607` | `ErrTargetAmbiguous` | 同时传入了 `WithSystem` 与 `WithRoute` |
-| `2608` | `ErrInputInvalid(detail)` | 输入被输入 Schema 拒绝 |
-| `2609` | `ErrOutputInvalid(detail)` | 脚本返回值被输出 Schema 拒绝 |
-| `2610` | `ErrUpstreamFailed(message)` | 外部系统报告的失败 |
-| `2611` | `ErrTransportFailed` | 线上调用未完成 |
-| `2612` | `ErrInvocationTimeout` | 超过运行超时 |
-| `2613` | `ErrScriptFailed(detail)` | 脚本抛出异常或编译失败 |
-| `2614` | `ErrUnknownAuthScheme(scheme)` | 系统引用了未注册的认证 scheme |
-| `2615` | `ErrInvalidSchema(detail)` | 契约 Schema 保存时被拒绝 |
-| `2616` | `ErrInvalidScript(detail)` | 适配器脚本保存时被拒绝 |
-| `2617` | `ErrInvalidAuthParams(detail)` | 认证配置被其 scheme 拒绝 |
-| `2618` | `ErrInvalidRouteRef` | 路由引用了不存在的契约或系统 |
-| `2619` | `ErrInvalidBaseURL` | 系统基础 URL 不是绝对 URL |
-| `2620` | `ErrInvalidDataSource(detail)` | 系统数据源不完整或凭证无法处理 |
-| `2621` | `ErrInvalidDirection` | 适配器方向不在已知流向内 |
-| `2622` | `ErrInboundAuthFailed` | 入站投递验证失败（HTTP 401，刻意统一） |
-| `2623` | `ErrInboundHandlerMissing` | 入站契约没有注册处理器（HTTP 501） |
-| `2624` | `ErrInvocationCanceled` | 调用方取消了调用 |
-| `2625` | `ErrInvalidEnvelope(detail)` | 出站信封配置保存时被拒绝 |
-| `2626` | `ErrInvalidLabel` | 契约 label 键/值校验失败 |
-| `2627` | `ErrMissingCodeMap(codeSet)` | 目标系统没有该码值集的已启用映射 |
-| `2628` | `ErrUnmappedValue(codeSet, value)` | reject 策略下的未映射值 |
-| `2629` | `ErrInvalidCodeMap(detail)` | 码值映射定义保存时被拒绝 |
+| 码 | 常量 | 错误 | 含义 |
+| --- | --- | --- | --- |
+| `2600` | `ErrCodeContractNotFound` | `ErrContractNotFound` | 契约不存在 |
+| `2601` | `ErrCodeContractDisabled` | `ErrContractDisabled` | 契约被禁用 |
+| `2602` | `ErrCodeSystemNotFound` | `ErrSystemNotFound` | 系统不存在 |
+| `2603` | `ErrCodeSystemDisabled` | `ErrSystemDisabled` | 系统被禁用 |
+| `2604` | `ErrCodeAdapterNotFound` | `ErrAdapterNotFound` | 该方向上没有适配器将系统绑定到契约 |
+| `2605` | `ErrCodeAdapterDisabled` | `ErrAdapterDisabled` | 适配器被禁用 |
+| `2606` | `ErrCodeRouteNotFound` | `ErrRouteNotFound` | 路由键未匹配任何规则 |
+| `2607` | `ErrCodeTargetAmbiguous` | `ErrTargetAmbiguous` | 同时传入了 `WithSystem` 与 `WithRoute` |
+| `2608` | `ErrCodeInputInvalid` | `ErrInputInvalid(detail)` | 输入被输入 Schema 拒绝 |
+| `2609` | `ErrCodeOutputInvalid` | `ErrOutputInvalid(detail)` | 脚本返回值被输出 Schema 拒绝 |
+| `2610` | `ErrCodeUpstreamFailed` | `ErrUpstreamFailed(message)` | 外部系统报告的失败 |
+| `2611` | `ErrCodeTransportFailed` | `ErrTransportFailed` | 线上调用未完成 |
+| `2612` | `ErrCodeInvocationTimeout` | `ErrInvocationTimeout` | 超过运行超时 |
+| `2613` | `ErrCodeScriptFailed` | `ErrScriptFailed(detail)` | 脚本抛出异常或编译失败 |
+| `2614` | `ErrCodeUnknownAuthScheme` | `ErrUnknownAuthScheme(scheme)` | 系统引用了未注册的认证 scheme |
+| `2615` | `ErrCodeInvalidSchema` | `ErrInvalidSchema(detail)` | 契约 Schema 保存时被拒绝 |
+| `2616` | `ErrCodeInvalidScript` | `ErrInvalidScript(detail)` | 适配器脚本保存时被拒绝 |
+| `2617` | `ErrCodeInvalidAuthParams` | `ErrInvalidAuthParams(detail)` | 认证配置被其 scheme 拒绝 |
+| `2618` | `ErrCodeInvalidRouteRef` | `ErrInvalidRouteRef` | 路由引用了不存在的契约或系统 |
+| `2619` | `ErrCodeInvalidBaseURL` | `ErrInvalidBaseURL` | 系统基础 URL 不是绝对 URL |
+| `2620` | `ErrCodeInvalidDataSource` | `ErrInvalidDataSource(detail)` | 系统数据源不完整或凭证无法处理 |
+| `2621` | `ErrCodeInvalidDirection` | `ErrInvalidDirection` | 适配器方向不在已知流向内 |
+| `2622` | `ErrCodeInboundAuthFailed` | `ErrInboundAuthFailed` | 入站投递验证失败（HTTP 401，刻意统一） |
+| `2623` | `ErrCodeInboundHandlerMissing` | `ErrInboundHandlerMissing` | 入站契约没有注册处理器（HTTP 501） |
+| `2624` | `ErrCodeInvocationCanceled` | `ErrInvocationCanceled` | 调用方取消了调用 |
+| `2625` | `ErrCodeInvalidEnvelope` | `ErrInvalidEnvelope(detail)` | 出站信封配置保存时被拒绝 |
+| `2626` | `ErrCodeInvalidLabel` | `ErrInvalidLabel` | 契约 label 键/值校验失败 |
+| `2627` | `ErrCodeMissingCodeMap` | `ErrMissingCodeMap(codeSet)` | 目标系统没有该码值集的已启用映射 |
+| `2628` | `ErrCodeUnmappedValue` | `ErrUnmappedValue(codeSet, value)` | reject 策略下的未映射值 |
+| `2629` | `ErrCodeInvalidCodeMap` | `ErrInvalidCodeMap(detail)` | 码值映射定义保存时被拒绝 |
+| `2630` | `ErrCodeCodeSetCatalogFailed` | `ErrCodeSetCatalogFailed(detail)` | 宿主码值目录无法响应 —— 映射编辑器选择器无法填充，码值映射保存时无法确认其标识符 |
 
 ## 下一步
 

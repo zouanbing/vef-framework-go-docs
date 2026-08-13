@@ -98,7 +98,7 @@ vef.Run(
 
 枚举类型是 `ApprovalMethod`。
 
-### 通过规则（并行模式）
+### 通过规则
 
 | 规则 | 常量 | Wire value | 行为 |
 | --- | --- | --- | --- |
@@ -115,10 +115,10 @@ vef.Run(
 | --- | --- | --- | --- |
 | 指定用户 | `AssigneeUser` | `user` | 特定用户 |
 | 角色 | `AssigneeRole` | `role` | 拥有某角色的用户 |
-| 部门 | `AssigneeDepartment` | `department` | 部门负责人 |
+| 部门 | `AssigneeDepartment` | `department` | 所配置部门的负责人 |
 | 申请人本人 | `AssigneeSelf` | `self` | 申请人自己 |
 | 直接上级 | `AssigneeSuperior` | `superior` | 直接上级 |
-| 部门领导链 | `AssigneeDepartmentLeader` | `department_leader` | 多级主管链 |
+| 部门领导链 | `AssigneeDepartmentLeader` | `department_leader` | 申请人所在部门的负责人（单层查询） |
 | 表单字段 | `AssigneeFormField` | `form_field` | 由表单字段值决定 |
 
 枚举类型是 `AssigneeKind`。动态加签位置使用 `AddAssigneeType`：
@@ -174,7 +174,6 @@ map：每个 key 必须引用一个顶层表单字段，取值必须在枚举内
 | `DefaultHandleApprovalMethod` | `ApprovalSequential` |
 | `DefaultHandlePassRule` | `PassAny` |
 | `DefaultUrgeCooldownMinutes` | `30` |
-| `DefaultTenantID` | `"default"` |
 
 ## 流程定义（兼容 React Flow）
 
@@ -212,7 +211,7 @@ type FlowDefinition struct {
 | `EndNodeData` | 只有 base 字段 |
 | `TaskNodeData` | `assignees`、`executionType`、`emptyAssigneeAction`、`fallbackUserIds`、`adminUserIds`、`isTransferAllowed`、`isOpinionRequired`、`timeoutHours`、`timeoutAction`、`timeoutNotifyBeforeHours`、`urgeCooldownMinutes`、`ccs`、`fieldPermissions` |
 | `ApprovalNodeData` | base 字段 + `TaskNodeData` 字段 + `approvalMethod`、`passRule`、`passRatio`、`sameApplicantAction`、`consecutiveApproverAction`、`rollbackType`、`rollbackDataStrategy`、`rollbackTargetKeys`、`isRollbackAllowed`、`isAddAssigneeAllowed`、`addAssigneeTypes`、`isRemoveAssigneeAllowed`、`isManualCcAllowed` |
-| `HandleNodeData` | base 字段 + `TaskNodeData` 字段；未设置时部署会默认 `approvalMethod = sequential`、`passRule = any` |
+| `HandleNodeData` | base 字段 + `TaskNodeData` 字段；部署时无条件设置 `approvalMethod = sequential`、`passRule = any`（handle 节点没有这两个 wire 字段） |
 | `CCNodeData` | base 字段 + `ccs`、`isReadConfirmRequired`、`fieldPermissions` |
 | `ConditionNodeData` | base 字段 + `branches` |
 
@@ -267,21 +266,47 @@ schema 产出零字段（没有表单的流程）；parser 报错会中止部署
 `maxLength` 用于约束行数，`isRequired` 表示至少要有一行。
 
 `validation` 支持 `minLength`、`maxLength`、`min`、`max`、`pattern` 和
-`message`。提交的 `formData` 在 JSON 编码后最大 64 KiB，即使流程没有表单
+`message`。提交的 `formData` 受 `vef.approval.form_data_max_bytes` 限制
+（默认值 64 KiB，来自 `config.DefaultFormDataMaxBytes`），即使流程没有表单
 schema 也会执行这个大小限制。有 schema 时，额外的表单 key 会被拒绝；必填字段会拒绝
 缺失、`null`、空白字符串和空数组。`input`、`textarea`、`date` 字段必须是字符串，
 可使用 `minLength`、`maxLength` 和 `pattern`。`number` 字段接受 JSON 数字，
-可使用 `min` 和 `max`。`select` 字段在配置了 `options` 时会校验标量或数组值是否
+可使用 `min` 和 `max`；`columnType` 为 `integer` 的 `number` 字段还会拒绝小数值。
+`select` 字段在配置了 `options` 时会校验标量或数组值是否
 存在于选项中。`upload` 字段接受非空白字符串、非空 `[]string`，或非空且每项都是非空白
 字符串的数组。`validation.message` 只作为 `pattern` 不匹配时的自定义错误信息；
 其他校验失败使用模块 i18n 消息。
+
+## 流程校验
+
+### 发起人规则
+
+`isAllInitiationAllowed` 与 `initiators` **互斥**：当 `isAllInitiationAllowed`
+为 `true` 时提交发起人规则会返回 `ErrInitiatorsNotAllowed`（code `40022`）。
+当限定时，至少需要一个发起人规则且至少包含一个 ID——空规则集或 `ids` 为空
+的规则会返回 `ErrInitiatorsRequired`（code `40023`），因为一个不选中任何人的规则
+和完全没有规则一样，流程都无法被发起。
+
+### 业务绑定 Schema
+
+流程使用 `BindingMode` 决定表单/实例数据如何与业务数据关联：
+
+- `BindingStandalone`（wire 值 `standalone`）—— 表单数据存在审批自己的表中（默认）。
+- `BindingBusiness`（wire 值 `business`）—— 流程通过 `BusinessBindingConfig`
+  挂接到已有的业务行。
+
+业务绑定流程（`BindingMode = business`）在保存时会对照真实数据库 schema 校验。
+当配置的 `tableName` 不存在时，返回 `ErrBindingTableMissing(tableName)`（code
+`40018`，`ErrCodeBindingSchemaInvalid`）。当配置的列在表中不存在时，返回
+`ErrBindingColumnMissing(columnName)`（同 code）。两者都会命名缺失的对象，让
+操作员不必亲自查看 schema 就能修正配置。
 
 ## 流程模型与设计器枚举
 
 公开包暴露的流程设计和持久化模型包括 `FlowCategory`、`Flow`、`FlowVersion`、
 `FlowNode`、`FlowEdge`、`FlowInitiator`、`FlowNodeAssignee`、`FlowNodeCC`、
 `FormFieldDefinition`、`FormSnapshot`、`ActionLog`、
-`OperatorInfo` 和 `UrgeRecord`（没有结构化的 `FormDefinition`
+`UserInfo` 和 `UrgeRecord`（没有结构化的 `FormDefinition`
 包装——宿主文档是 opaque 的，框架侧只有 `FormFieldDefinition` 这一种
 形状）。流程版本状态使用 `VersionStatus`：
 `VersionDraft`（`draft`）、`VersionPublished`（`published`）、
@@ -302,6 +327,16 @@ schema 也会执行这个大小限制。有 schema 时，额外的表单 key 会
 | `FieldKind` | `input`、`textarea`、`select`、`number`、`date`、`upload`、`table` |
 | `ColumnDataType` | `string`、`text`、`integer`、`decimal`、`boolean`、`date`、`datetime`、`json` |
 | `Permission` | `visible`、`editable`、`hidden`、`required` |
+
+### 发起人规则校验
+
+创建或更新流程时，发起人规则会被校验：
+
+- `isAllInitiationAllowed` 为 `true` 时，不能同时提供 `initiators`，否则报错
+  `ErrInitiatorsNotAllowed`（码 `40022`）。
+- `isAllInitiationAllowed` 为 `false` 时，必须至少提供一条 `ids` 非空的发起人规则，
+  否则报错 `ErrInitiatorsRequired`（码 `40023`）。
+- 单条规则的 `ids` 必须至少包含一个用户、角色或部门。
 
 ---
 

@@ -19,10 +19,10 @@ surface 背后的受支持行为和运行时 contract。
 | resource 和 kind | `api.Resource`, `api.Kind`, `api.KindRPC`, `api.KindREST`, `api.ValidateActionName(action, kind) error`, `api.NewRPCResource(name, opts...)`, `api.NewRESTResource(name, opts...)`, `api.WithVersion(v)`, `api.WithAuth(config)`, `api.WithOperations(specs...)` |
 | engine 和 routing 扩展 | `api.Engine`, `api.RouterStrategy`, `api.Middleware` |
 | operations | `api.OperationSpec`, `api.Operation`, `api.RateLimitConfig`, `api.OperationsProvider`, `api.OperationsCollector` |
-| request model | `api.Identifier`, `api.Request`, `api.Params`, `api.Meta`, `api.P`, `api.StrictP`, `api.M` |
+| request model | `api.Identifier`, `api.Request`, `api.Params`, `api.Meta`, `api.P`, `api.M` |
 | auth | `api.AuthConfig`, `api.Public()`, `api.BearerAuth()`, `api.SignatureAuth()`, `api.IPAuth(...)`, `api.APIKeyAuth(...)`, `api.HTTPBasicAuth()`, `api.AuthStrategy`, `api.AuthStrategyRegistry` |
 | handler 扩展 | `api.HandlerResolver`, `api.HandlerAdapter`, `api.HandlerParamResolver`, `api.FactoryParamResolver` |
-| audit、headers、versions、errors | `api.AuditEvent`, `api.SubscribeAuditEvent`, `api.HeaderXMetaPrefix`, `api.HeaderXTimestamp`, `api.HeaderXNonce`, `api.HeaderXSignature`, `api.HeaderXAppID`, `api.VersionV1`, `api.VersionV9`, `api.ErrInvalidRequestParams`, `api.ErrInvalidRequestMeta`, `api.ErrInvalidParamsType`, `api.ErrInvalidMetaType` |
+| audit、headers、versions、errors | `api.AuditEvent`, `api.SubscribeAuditEvent`, `api.HeaderXMetaPrefix`, `api.HeaderXTimestamp`, `api.HeaderXNonce`, `api.HeaderXSignature`, `api.HeaderXAppID`, `api.HeaderXBodyEncoding`, `api.VersionV1`..`api.VersionV9`, `api.ErrInvalidRequestParams`, `api.ErrInvalidRequestMeta`, `api.ErrInvalidParamsType`, `api.ErrInvalidMetaType`, `api.ErrUnsupportedBodyEncoding`, `api.ErrBodyDecodeFailed`, `api.ErrBodyTooLarge` |
 
 ## 架构
 
@@ -88,11 +88,19 @@ resource := api.NewRPCResource("sys/user",
 
 ### 资源选项
 
+`api.ResourceOption` 是资源构造函数接受的 option 函数类型：
+
 | 选项 | 说明 |
 | --- | --- |
-| `api.WithVersion(v)` | 覆盖引擎的默认版本（如 `"v2"`）|
+| `api.WithVersion(v)` | 覆盖引擎默认版本；`v` 可以是匹配 `^v\d+$` 的字面量（如 `"v2"`），或 `api.VersionV2` 等常量 |
 | `api.WithAuth(config)` | 设置资源级认证 |
 | `api.WithOperations(specs...)` | 直接提供操作规格 |
+
+版本常量提供了保留的阶梯 `api.VersionV1` 至 `api.VersionV9`。
+`api.VersionV1` 是框架默认值；`api.VersionV2`、`api.VersionV3`、
+`api.VersionV4`、`api.VersionV5`、`api.VersionV6`、`api.VersionV7`、
+`api.VersionV8` 和 `api.VersionV9` 是在资源上声明更高 API 版本的便捷常量。
+任何匹配 `^v\d+$` 的字面量也都会被接受。
 
 `api.NewRPCResource` 和 `api.NewRESTResource` 会在构造期校验 resource
 name、version，以及通过直接 `api.WithOperations(...)` 传入的 specs；校验失败会
@@ -153,7 +161,7 @@ Operation 默认化规则：
 | `Timeout` | 非正值使用 engine 默认值；未覆盖时默认 `30s` |
 | `Public` | 为 `true` 时先解析为 `api.Public()`，优先于资源级/default auth |
 | `RequiredPermission` | 非空时写入 auth options 中的 required permission token |
-| `RateLimit` | nil 使用 engine 默认——配置了 `vef.api.rate_limit` 时用配置值，否则 `Max=100`、`Period=5m`；自定义 `RateLimitConfig` 会替换默认值。显式 `Max <= 0` **不会**关闭限流——中间件对非正值回退到 engine/配置默认值 |
+| `Operation.RateLimit` | nil 使用 engine 默认——配置了 `vef.api.rate_limit` 时用配置值，否则 `Max=100`、`Period=5m`；自定义 `RateLimitConfig` 会替换默认值。显式 `Max <= 0` **不会**关闭限流——中间件对非正值回退到 engine/配置默认值 |
 | `Handler` | RPC 可在省略时从 action 推断；REST 必须显式提供 handler |
 
 权限声明在注册时校验，违规将导致启动失败：
@@ -435,6 +443,9 @@ func (r *UserResource) Create(ctx fiber.Ctx, params UserParams, db orm.DB) error
 | `ErrInvalidActionName` | Action 不符合类型特定规则 |
 | `ErrInvalidParamsType` | Params.Decode 目标不是指向结构体的指针 |
 | `ErrInvalidMetaType` | Meta.Decode 目标不是指向结构体的指针 |
+| `ErrUnsupportedBodyEncoding` | `X-Body-Encoding` 头的值不被支持 |
+| `ErrBodyDecodeFailed` | 编码后的 body 无法解码（base64 格式错误或 gzip 损坏） |
+| `ErrBodyTooLarge` | 解码后的 body 超过配置的 body 限制 |
 
 `Params.Decode` 和 `Meta.Decode` 都要求传入 struct 指针。其他目标会返回
 `ErrInvalidParamsType` 或 `ErrInvalidMetaType`。

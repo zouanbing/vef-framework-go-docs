@@ -242,6 +242,12 @@ Fiber 请求 helper。不要与 `httpx` 混淆——那个名字属于
 时，客户端直接伪造的 `X-Forwarded-For` 会被忽略；配置 trusted proxy 后，
 Fiber 会按自己的 proxy settings 处理 `X-Forwarded-For`。
 
+```go
+func IsJSON(ctx fiber.Ctx) bool
+func IsMultipart(ctx fiber.Ctx) bool
+func GetIP(ctx fiber.Ctx) string
+```
+
 ## `version`
 
 框架版本常量。

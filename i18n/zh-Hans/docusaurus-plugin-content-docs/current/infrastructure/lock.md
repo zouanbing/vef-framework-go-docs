@@ -68,6 +68,13 @@ type Lock interface {
 }
 ```
 
+### 构造器
+
+| API | 契约 |
+| --- | --- |
+| `lock.NewMemoryLocker() lock.Locker` | 创建进程内锁，用于单实例部署与测试 |
+| `lock.NewRedisLocker(client *redis.Client) lock.Locker` | 创建 Redis 锁，用于跨副本互斥 |
+
 `Acquire` 会持续重试直到 `WithWait` 窗口耗尽（默认不等待）；`TryAcquire`
 只做一次非阻塞尝试。锁被他人持有时二者都返回 `lock.ErrNotAcquired`，后端
 出错时 fail closed。租约不再归属自己后，`Release` 和 `Refresh` 返回

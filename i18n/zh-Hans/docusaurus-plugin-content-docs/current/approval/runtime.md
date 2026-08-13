@@ -99,7 +99,7 @@ sidebar_position: 4
 | 属性 | 可选值 |
 | --- | --- |
 | `RollbackType` | `RollbackNone`（`none`）、`RollbackPrevious`（`previous`）、`RollbackStart`（`start`）、`RollbackAny`（`any`）、`RollbackSpecified`（`specified`） |
-| `RollbackDataStrategy` | `RollbackDataClear`（`clear`，重置表单）、`RollbackDataKeep`（`keep`，保留数据）|
+| `RollbackDataStrategy` | `RollbackDataClear`（`clear`，重置表单）、`RollbackDataKeep`（`keep`，恢复目标节点进入时捕获的表单快照；节点多次进入时取最新一份）|
 
 同一申请人处理使用 `SameApplicantAction`，取值包括
 `SameApplicantSelfApprove`（`self_approve`）、`SameApplicantAutoPass`
@@ -152,7 +152,8 @@ sidebar_position: 4
 | `FormTable` | 一张生成的物理表（主投影表或明细表格子表） | `flowId`、`versionId`、`physicalTableName`、`sourceFieldKey` |
 | `FormTableColumn` | 每个表单字段或内置列对应一个生成列 | `formTableId`、`columnName`、`columnType`、`isNullable`、`sourceFieldKey`、`sortOrder` |
 
-`FormTable` 是框架生成 DDL 的单一事实来源：引擎在建表前会先查它保证幂等，
+`FormTable` 是框架生成 DDL 的单一事实来源：发布路径会先查它，避免重复发布时
+重复记录版本元数据（DDL 本身通过 `CREATE TABLE IF NOT EXISTS` 保证幂等）；
 操作员也可以通过它把版本映射到对应的投影表。`FormTable.SourceFieldKey`
 对版本的主投影表是 `""`，对明细表格子投影是所属 table 字段的 key；
 `(versionId, sourceFieldKey)` 唯一。`ColumnDataType` 是表单定义使用的逻辑
@@ -165,7 +166,7 @@ sidebar_position: 4
 
 | 表 | 物理表名 | 内置列 | 字段列 |
 | --- | --- | --- | --- |
-| 主投影表 | `apv_form_<code>_<versionId>`（flow code 经净化处理并按 63 字符标识符上限截断；预算不足时退化为 `apv_form_<versionId>`） | `id`（主键）、`instance_id`（UNIQUE）、`created_at` 排最后 | 每个标量字段一列，按声明顺序 |
+| 主投影表 | `apv_form_<code>_<versionId>`（flow code 经净化处理并截断，使整个表名不超过 63 字符标识符上限；预算不足或 code 为空时退化为 `apv_form_<versionId>`） | `id`（主键）、`instance_id`（UNIQUE）、`created_at` 排最后 | 每个标量字段一列，按声明顺序 |
 | 明细表格子表 | `apv_form_<versionId>__<fieldKey 后缀>` | `id`（主键）、`instance_id`（有索引、非唯一）、`row_index`、`created_at` 排最后 | 每个表格列一列，按声明顺序 |
 
 每个物理表名和列名进入 DDL/DML 字符串前都要先通过安全 SQL 标识符校验，
@@ -175,9 +176,9 @@ sidebar_position: 4
 写入，随版本的发布状态一起提交或回滚。
 
 写入时投影采用"替换而非追加"策略：主表每个实例恰好一行（由 `instance_id`
-UNIQUE 约束保证），子表按 `row_index` 排序、每条明细一行；每次投影（启动时
-和每次重新提交时）都会先删除该实例已有的行再插入新行——物理表始终反映当前
-表单数据，不积累历史。
+UNIQUE 约束保证），子表按 `row_index` 排序、每条明细一行；每次投影（实例表单
+数据发生变更时——启动、重新提交，以及任何修改表单数据的任务操作）都会先删除
+该实例已有的行再插入新行——物理表始终反映当前表单数据，不积累历史。
 
 ## 实例进度投影
 
@@ -194,7 +195,7 @@ UNIQUE 约束保证），子表按 `row_index` 排序、每条明细一行；每
 
 | 枚举 | 常量 |
 | --- | --- |
-| `TimelineEntryKind` | `TimelineEntryStart`、`TimelineEntryApproval`、`TimelineEntryHandle`、`TimelineEntryCC`、`TimelineEntryWithdraw`、`TimelineEntryTerminate` |
+| `TimelineEntryKind` | `TimelineEntryStart`、`TimelineEntryApproval`、`TimelineEntryHandle`、`TimelineEntryCC`、`TimelineEntryEnd`、`TimelineEntryWithdraw`、`TimelineEntryTerminate` |
 | `NodeVisitStatus` | `NodeVisitActive`、`NodeVisitPassed`、`NodeVisitRejected`、`NodeVisitReturned`、`NodeVisitCanceled` |
 | `NodeProgressStatus` | `NodeProgressPending`、`NodeProgressActive`、`NodeProgressPassed`、`NodeProgressRejected`、`NodeProgressReturned`、`NodeProgressCanceled` |
 

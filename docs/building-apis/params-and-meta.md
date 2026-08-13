@@ -25,11 +25,32 @@ The framework supports these request-decoding targets:
 | Target type | Decoded from | Validation | Typical use |
 | --- | --- | --- | --- |
 | typed struct embedding `api.P` | `params` | Yes | business params |
-| typed struct embedding `api.StrictP` | `params` | Yes | business params, rejecting request keys the struct does not declare (`Params.DecodeStrict`) |
 | typed struct embedding `api.M` | `meta` | Yes | typed meta |
 | `page.Pageable` | `meta` | Yes | paging |
 | `api.Params` | `params` | No typed validation | raw dynamic payload |
 | `api.Meta` | `meta` | No typed validation | raw dynamic meta |
+
+## Permissive Params Decoding
+
+Params decoding is permissive by default: a request key the target struct does
+not declare is ignored, so a client that is still sending a retired field keeps
+working. The framework does not reject the request for an unknown key;
+`Params.Decode` simply drops it.
+
+To surface those unknown keys for monitoring, use `Params.DecodeReportingUnmapped`:
+
+```go
+unmapped, err := params.DecodeReportingUnmapped(&target)
+```
+
+It returns the sorted list of request keys the target struct does not declare.
+Nested keys are reported by path (for example, `trigger.at`). The framework's
+request pipeline logs them once per operation and key set, which keeps a
+misspelled or retired field visible without failing a request older clients
+still send.
+
+There is no strict/reject mode: a closed contract is expressed by the report,
+not by a `400`.
 
 ## `api.P` Marks Params Structs
 
@@ -106,10 +127,13 @@ For REST requests:
 
 | Input source | Lands in | Notes |
 | --- | --- | --- |
+| route path parameters | `params` | path placeholders from the operation's route pattern (for example `:id`) |
 | query string | `params` | used for read filters and plain request fields |
 | JSON body on `POST` / `PUT` / `PATCH` | `params` | write payload |
 | multipart fields on `POST` / `PUT` / `PATCH` | `params` | includes uploaded files |
 | `X-Meta-*` headers | `meta` | request-level control values; keys are lowercased after the prefix is removed |
+
+The router strips the reserved query parameter `security.QueryKeyAccessToken` (`__accessToken`) before filling `params` — authentication reads it directly from the request context, so it never enters the business parameter space.
 
 That means paging and sorting are not automatically pulled from query string into built-in meta helpers. If a handler expects meta-based controls such as `page.Pageable`, the caller should provide them through `X-Meta-*` headers or a typed meta contract.
 

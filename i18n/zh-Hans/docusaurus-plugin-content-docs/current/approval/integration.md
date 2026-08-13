@@ -6,12 +6,18 @@ sidebar_position: 5
 
 ## 事件发布
 
-审批模块通过框架统一的事务性 outbox transport 发布领域事件（见 [事件总线](../infrastructure/event-bus.md)）。每条审批命令都把事件记录写在和业务变更相同的事务里，再由 outbox relay 转发到配置的 sink。
+审批模块通过框架统一的事务性 outbox transport 发布领域事件（见 [事件总线](../infrastructure/event-bus.md)）。每条审批命令都把事件记录写在和业务变更相同的事务里，再由 outbox relay 转发到配置的 sink。单次 engine pass 内产生的事件按发生顺序发布。
 
 订阅方必须：
 
 1. 用 `event.WithGroup("...")` 挂上 —— 路由解析到 at-least-once transport。
 2. 依赖 Inbox 中间件去重（在 `event.middleware.inbox = true` 且 transport 声明 `AtLeastOnce` 时自动激活）。
+
+同一事务内的事件按它们发生的顺序发布。引擎在状态变更发生的那一刻立即
+发出事件，outbox relay 按该发生顺序转发。
+
+审批命令通过 `event.WithTx(db)` 在业务事务内发布领域事件；只有事务提交后事件
+才对订阅方可见。所有审批领域事件共享 `approval.*`  topic 命名空间。
 
 > 老版本里的独立 `apv_event_outbox` 表和 `EventOutboxStatus` 常量已经废弃。审批模块不再自维护一个 outbox，而是组合使用框架统一 outbox。
 
@@ -41,7 +47,8 @@ sidebar_position: 5
 
 | 类型常量 | Topic | Payload / 构造器 | 除通用字段外的 payload 字段 | 触发场景 |
 | --- | --- | --- | --- | --- |
-| `EventTypeTaskCreated` | `approval.task.created` | `TaskCreatedEvent`, `NewTaskCreatedEvent` | `assignee`（`UserInfo`）、`deadline` | 任务创建；顺序审批中的后续任务可能先没有 `deadline`，表示还在等待前置任务 |
+| `EventTypeTaskCreated` | `approval.task.created` | `TaskCreatedEvent`, `NewTaskCreatedEvent` | `assignee`（`UserInfo`）、`deadline`、`status` | 任务创建；顺序审批中的后续任务可能先没有 `deadline`，表示还在等待前置任务 |
+| `EventTypeTaskActivated` | `approval.task.activated` | `TaskActivatedEvent`, `NewTaskActivatedEvent` | `assignee`（`UserInfo`）、`deadline`、`reason`（`TaskActivationReason`：`assigned`、`queue_advanced`、`transferred`、`reassigned`） | 任务变为可操作状态——待办通知应订阅此事件。当任务在同一 engine pass 中（如连续审批人连跳）被清除时会被抑制 |
 | `EventTypeTaskApproved` | `approval.task.approved` | `TaskApprovedEvent`, `NewTaskApprovedEvent` | `operator`（`UserInfo`）、`opinion` | 任务被批准 |
 | `EventTypeTaskHandled` | `approval.task.handled` | `TaskHandledEvent`, `NewTaskHandledEvent` | `operator`（`UserInfo`）、`opinion` | handle 任务完成 |
 | `EventTypeTaskRejected` | `approval.task.rejected` | `TaskRejectedEvent`, `NewTaskRejectedEvent` | `operator`（`UserInfo`）、`opinion` | 任务被驳回 |
@@ -52,7 +59,7 @@ sidebar_position: 5
 | `EventTypeAssigneesAdded` | `approval.task.assignees_added` | `AssigneesAddedEvent`, `NewAssigneesAddedEvent` | `addType`、`assignees`（`[]UserInfo`） | 动态新增审批人 |
 | `EventTypeAssigneesRemoved` | `approval.task.assignees_removed` | `AssigneesRemovedEvent`, `NewAssigneesRemovedEvent` | `assignees`（`[]UserInfo`） | 动态移除审批人 |
 | `EventTypeTaskDeadlineWarning` | `approval.task.deadline_warning` | `TaskDeadlineWarningEvent`, `NewTaskDeadlineWarningEvent` | `assignee`（`UserInfo`）、`deadline`、`hoursLeft` | 预警扫描器命中即将到期任务 |
-| `EventTypeTaskUrged` | `approval.task.urged` | `TaskUrgedEvent`, `NewTaskUrgedEvent` | `urger`（`UserInfo`）、`target`（`UserInfo`）、`message` | 申请人催办 |
+| `EventTypeTaskUrged` | `approval.task.urged` | `TaskUrgedEvent`, `NewTaskUrgedEvent` | `urger`（`UserInfo`）、`target`（`UserInfo`）、`message` | 申请人或曾持有任务的参与者（办理人/委托人）催办 |
 
 CC + 流程：
 
@@ -64,6 +71,10 @@ CC + 流程：
 | `EventTypeFlowDeployed` | `approval.flow.deployed` | `FlowDeployedEvent`, `NewFlowDeployedEvent` | `versionId`、`version` | 流程版本部署 |
 | `EventTypeFlowToggled` | `approval.flow.toggled` | `FlowToggledEvent`, `NewFlowToggledEvent` | `isActive` | 流程启停状态变化 |
 | `EventTypeFlowPublished` | `approval.flow.published` | `FlowPublishedEvent`, `NewFlowPublishedEvent` | `versionId` | 流程版本发布 |
+
+所有实例和任务事件都从内嵌的 `InstanceEventBase` 携带 `tenantId` 与 `occurredTime`；
+`occurredTime` 是业务时间，经 `event.WithOccurredAt` 投影到 `Envelope.OccurredAt`。
+`EventTypeTaskCreated` 是 `approval.task.created` 这一 topic 的常量名。
 
 ## CallerContext 与多租户安全
 
@@ -121,12 +132,14 @@ type BusinessRefResolver interface {
 | 字段 | JSON | 含义 |
 | --- | --- | --- |
 | `TableName` | `tableName` | 接收审批状态的业务表 |
-| `KeyColumns` | `keyColumns` | 记录键列；必须与表上一个非空主键或唯一键完全一致（保存时对照真实 schema 校验——`ErrBindingSchemaInvalid` / `ErrBindingKeyNotUnique`） |
+| `KeyColumns` | `keyColumns` | 记录键列；必须与表上一个非空主键或唯一键完全一致（保存时对照真实 schema 校验——缺表 → `ErrBindingTableMissing`；缺列 → `ErrBindingColumnMissing`；两者均归码 `40018` / `ErrBindingSchemaInvalid`；键列不完整或非唯一 → `ErrBindingKeyNotUnique`） |
 | `StatusColumn` | `statusColumn` | 接收（映射后）实例状态的列 |
 | `InstanceIDColumn` | `instanceIdColumn` | **必填**——compare-and-set 防护栏，阻止过期实例覆盖新一轮审批拥有的状态 |
 | `StartedAtColumn` | `startedAtColumn` | 可选；接收实例发起时间 |
 | `FinishedAtColumn` | `finishedAtColumn` | 可选；最终状态时写入结束时间，否则为 `NULL` |
 | `StatusMapping` | `statusMapping` | 可选的 `InstanceStatus` → 宿主状态值映射；缺失的条目回退为原始状态字符串（`ErrBindingStatusMappingInvalid` 拒绝未知状态与空白值） |
+
+
 
 收敛分三步：
 
@@ -134,9 +147,11 @@ type BusinessRefResolver interface {
 2. **每次迁移登记期望状态。**实例的每次状态迁移都会递增投影的 `DesiredRevision` 并记录完整期望状态（状态、开始、结束时间）。投影收敛到*最新*期望状态——中间状态可能被跳过，这正是"绑定到特定生命周期时刻的副作用应放在 `BindCommand` 或 `SubscribeInstance`"的原因。
 3. **应用。**`vef.approval.business_binding.consistency` 决定业务行何时写入：
    - `synchronous`（默认）——在审批事务内写入；写入失败会回滚该审批动作。
-   - `eventual`——审批动作立即提交；后台 worker（`scan_interval` 默认 `10s`，`batch_size` 默认 `100`）用 `FOR UPDATE SKIP LOCKED` 加租约认领到期投影并应用最新 revision，失败按指数退避重试（1s 起翻倍，封顶 1 小时）。每次失败尝试都会发布 `InstanceBindingFailedEvent` 作为运维通知——驱动重试的是持久投影行，不是事件。
+   - `eventual`——审批动作立即提交；后台 worker（`scan_interval` 默认 `10s`，`batch_size` 默认 `100`）用 `FOR UPDATE SKIP LOCKED` 加租约认领到期投影并应用最新 revision，失败按指数退避重试（`1s << attemptCount`，即 2s、4s……封顶 1 小时）。每次失败尝试都会发布 `InstanceBindingFailedEvent` 作为运维通知——驱动重试的是持久投影行，不是事件。
 
-应用的 `UPDATE` 设置已配置的列,条件为 `WHERE <记录键匹配> [AND <instanceIdColumn> = <已应用占有者>]`，状态值经 `StatusMapping` 翻译。运维侧通过管理端操作 `find_business_projections` / `retry_business_projection` 巡检并强制收敛（见 [RPC 资源](./resources.md#approvaladmin)），`get_metrics` 报告 `businessProjectionCounts` 与 `pendingBusinessProjections`。
+应用的 `UPDATE` 设置已配置的列,条件为 `WHERE <记录键匹配> [AND <instanceIdColumn> = <已应用占有者>]`，状态值经 `StatusMapping` 翻译。运维侧通过管理端操作 `find_business_projections` / `retry_business_projection` 巡检并强制收敛（见 [RPC 资源](./resources.md#approvaladmin)——每条投影行通过 `BusinessTable` 与 `recordKey` 标识其物理目标），`get_metrics` 报告 `businessProjectionCounts` 与 `pendingBusinessProjections`。
+
+投影状态枚举为 `BindingProjectionStatus`，取值为 `BindingProjectionPending`（已记录新期望状态）、`BindingProjectionProcessing`（worker 已认领并正在应用）、`BindingProjectionApplied`（最新期望状态已写入）和 `BindingProjectionFailed`（最近写入失败，将重试）。
 
 投影归引擎所有；它由配置驱动，不由扩展 hook 替换。宿主用 lifecycle hook、事件订阅和命令桥在它周围叠加行为。
 
@@ -224,8 +239,8 @@ type Delegation struct {
     DelegateeID    string         // 被委托人
     FlowCategoryID *string        // 可选：限定分类
     FlowID         *string        // 可选：限定特定流程
-    StartTime      timex.DateTime // 委托开始时间
-    EndTime        timex.DateTime // 委托结束时间
+    StartsAt       timex.DateTime // 委托窗口开始时间
+    EndsAt         timex.DateTime // 委托窗口结束时间
     IsActive       bool
     Reason         *string        // 可选：委托原因
 }
@@ -238,7 +253,7 @@ type Delegation struct {
 | caller safety | `CallerContext`, `SystemCaller`, `IsSuperAdmin`, `SuperAdminRole`, `ErrCrossTenantAccess` |
 | form data | `FormData`, `NewFormData`, `FormSchemaParser`, `FormFieldDefinition`, `FormSnapshot`, `ValidationRule`, `StorageMode`, `StorageJSON`, `StorageTable`, `FieldKind`, `FieldInput`, `FieldNumber`, `FieldDate`, `FieldTextarea`, `FieldSelect`, `FieldUpload`, `FieldTable`, `FieldOption`, `ColumnDataType`, `ColumnString`, `ColumnText`, `ColumnInteger`, `ColumnDecimal`, `ColumnBoolean`, `ColumnDate`, `ColumnDatetime`, `ColumnJSON` |
 | table storage | `FormTable`, `FormTableColumn`（`FormTable.SourceFieldKey` 对主表是 `""`，对明细表格子投影是对应 table 字段的 key） |
-| flow models | `FlowCategory`, `Flow`, `FlowVersion`, `FlowNode`, `FlowEdge`, `FlowInitiator`, `FlowNodeAssignee`, `FlowNodeCC`, `VersionStatus`, `VersionDraft`, `VersionPublished`, `VersionArchived`, `ActionLog`, `OperatorInfo`, `UrgeRecord`, `DefaultTenantID` |
+| flow models | `FlowCategory`, `Flow`, `FlowVersion`, `FlowNode`, `FlowEdge`, `FlowInitiator`, `FlowNodeAssignee`, `FlowNodeCC`, `VersionStatus`, `VersionDraft`, `VersionPublished`, `VersionArchived`, `ActionLog`, `UrgeRecord`, `DefaultTenantID` |
 | node design | `FlowDefinition`, `NodeDefinition`, `EdgeDefinition`, `Position`, `NodeData`, `BaseNodeData`, `StartNodeData`, `ApprovalNodeData`, `HandleNodeData`, `ConditionNodeData`, `CCNodeData`, `EndNodeData`, `ErrUnknownNodeKind`, `ErrNodeDataUnmarshal` |
 | conditions | `ConditionKind`, `ConditionField`, `ConditionExpression`, `Condition`, `ConditionGroup`, `ConditionBranch`, `EvaluationContext`, `ConditionEvaluator`, `InstanceGlobalsResolver`, `AggregateKind`, `AggregateSum`, `AggregateCount`, `AggregateAvg`, `Aggregator` |
 | initiators and assignees | `InitiatorKind`, `InitiatorUser`, `InitiatorRole`, `InitiatorDepartment`, `AssigneeKind`, `AssigneeDefinition`, `AssigneeService`, `ResolvedAssignee`, `UserInfo`, `UserInfoResolver`, `RoleMembershipChecker`, `AddAssigneeType`, `AddAssigneeBefore`, `AddAssigneeAfter`, `AddAssigneeParallel` |
@@ -250,7 +265,7 @@ type Delegation struct {
 | action and status enums | `ActionType`, `InstanceStatus`, `TaskStatus`, `NodeKind`, `StorageMode`, `VersionStatus` |
 | pass rules | `PassRule`, `PassRuleContext`, `PassRuleStrategy`, `PassRuleResult`, `PassRulePending`, `PassRulePassed`, `PassRuleRejected` |
 | progress views | `TimelineEntryKind`, `TimelineEntry`, `NodeVisitStatus`, `NodeProgressStatus`, `InstanceFlowGraph`, `FlowGraphNode`, `FlowGraphNodeData`, `FlowGraphEdge`, `NodeParticipant`, `Activity`, `ActivityUrge`, `CCRecipient` |
-| events | 所有 `New...Event` 构造器、`DomainEvent`、`InstanceEventBase`、`TaskEventBase`、`FlowEventBase`、`NewInstanceEventBase`、`NewTaskEventBase`、`NewFlowEventBase`、`PayloadOccurredAt`、`AllEventTypes` 和 `EventType...` 常量 |
+| events | 所有 `New...Event` 构造器、`DomainEvent`、`InstanceEventBase`、`TaskEventBase`、`FlowEventBase`、`NewInstanceEventBase`、`NewTaskEventBase`、`NewFlowEventBase`、`PayloadOccurredAt`、`AllEventTypes`、`TaskActivationReason`、`TaskActivationAssigned`、`TaskActivationQueueAdvanced`、`TaskActivationTransferred`、`TaskActivationReassigned` 和 `EventType...` 常量 |
 | extension interfaces | `InstanceLifecycleHook`, `BusinessRefProvider`, `BusinessRefResolver`, `InstanceNoGenerator`, `ConditionEvaluator`, `InstanceGlobalsResolver`, `PrincipalTenantResolver`, `PrincipalDepartmentResolver`, `RoleMembershipChecker` |
 | DI helpers（`vef` 包） | `SupplyBusinessRefProvider`, `SupplyBusinessRefResolver`, `ProvideApprovalLifecycleHook`, `ProvideApprovalAggregator`, `ProvideApprovalFormSchemaParser` |
 | admin DTOs | `approval/admin` 包：`Instance`, `InstanceDetail`, `InstanceDetailInfo`, `Task`, `ActionLog`, `Metrics`, `BusinessProjection` |

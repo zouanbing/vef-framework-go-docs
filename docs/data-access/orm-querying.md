@@ -448,7 +448,7 @@ db.NewSelect().Model(&users).
 `RelationSpec` fields:
 - `Model`: the related model (required)
 - `Alias`: custom table alias (default: model's default alias)
-- `JoinType`: `orm.JoinLeft` (default), `orm.JoinInner`, `orm.JoinRight`, etc.
+- `JoinType`: `orm.JoinDefault` (defaults to LEFT JOIN), `orm.JoinLeft`, `orm.JoinInner`, `orm.JoinRight`, `orm.JoinFull`, `orm.JoinCross`
 - `ForeignColumn`: auto-resolved to `{model_name}_{pk}` if empty
 - `ReferencedColumn`: auto-resolved to PK if empty
 - `SelectedColumns`: which columns to select with aliasing
@@ -560,7 +560,7 @@ db.NewSelect().Model(&user).ForKeyShare().Scan(ctx)
 db.NewSelect().Model(&user).ForNoKeyUpdate().Scan(ctx)
 ```
 
-> Note: SQLite does not support row-level locking — calls are silently ignored with a warning.
+> Dialect support: SQLite does not support row-level locking — calls are silently ignored with a warning. `FOR NO KEY UPDATE` and `FOR KEY SHARE` are PostgreSQL-only; on MySQL they are silently ignored with a warning. Each dialect-and-lock-mode combination warns once per process to avoid flooding the log of a loop that locks rows.
 
 ## Execution Methods
 
@@ -610,6 +610,23 @@ db.NewSelect().Model(&users).
 	}).
 	Scan(ctx)
 ```
+
+## Quiet SQL Logging
+
+The `orm.DB` SQL query hook demotes successful statement logs from Info to Debug
+when the context carries a quiet-SQL-log mark. Framework maintenance loops (the
+durable cron engine's claim/sweep polling) run their periodic queries under this
+mark so steady-state logs stay readable; host applications may mark their own
+polling work the same way.
+
+| Helper | Contract |
+| --- | --- |
+| `IsQuietSQLLog(ctx)` | reports whether the context carries the quiet-SQL-log mark |
+| `WithQuietSQLLog(ctx)` | marks the context so the query hook demotes successful statement logs to Debug |
+| `WithoutQuietSQLLog(ctx)` | lifts the mark; a framework polling loop marks its own bookkeeping quiet, but the mark must not survive the handoff to host code |
+
+Slow-query warnings and failures keep their level — noise reduction must never
+hide a problem.
 
 ## Next Step
 

@@ -73,7 +73,7 @@ The SPA middleware:
 - serves the app entry at the configured path
 - serves static assets under the configured path prefix at `/static/*`
 - enables `etag` caching and adds security headers via `helmet`
-- performs SPA-style fallback routing for non-API GET paths to `index.html`
+- performs SPA-style fallback routing: any other GET request under the mount path is rewritten to the SPA entry and served `index.html`
 - honors `ExcludePaths` before fallback routing so excluded prefixes keep their normal route or 404 behavior
 
 Its `Order()` is `1000`, so it runs after API routing. This lets one VEF process own both the API and the SPA shell when that deployment model is useful.

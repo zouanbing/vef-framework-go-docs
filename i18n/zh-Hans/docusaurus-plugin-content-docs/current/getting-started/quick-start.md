@@ -69,7 +69,7 @@ enabled = true
 
 [[vef.event.routing]]
 pattern = "vef.storage.*"
-transports = ["outbox"]
+transports = ["outbox", "memory"]
 ```
 
 这份配置之所以够用，是因为：
@@ -79,7 +79,7 @@ transports = ["outbox"]
 - 当前资源是 `Public`，所以不需要先接认证加载器
 - 这个示例本身没有使用任何 Redis 相关能力
 
-即使这个示例完全不涉及存储，后两个 event 配置块也是必需的：storage 模块会在启动时校验 `vef.storage.*` 事件是否路由到了事务性传输，否则应用直接拒绝启动。启用 outbox 传输（它会自动创建自己的表）即可满足该校验；改设 `vef.event.default_transport = "outbox"` 代替路由规则同样可行。
+即使这个示例完全不涉及存储，后两个 event 配置块也是必需的：storage 模块会在启动时校验 `vef.storage.*` 事件是否路由到了事务性传输，否则应用直接拒绝启动。启用 outbox 传输（它会自动创建自己的表）即可满足该校验，路由中把 `"memory"`（outbox 的默认 sink）与 `"outbox"` 写在一起，事件才能在进程内被订阅；改设 `vef.event.default_transport = "outbox"` 代替路由规则同样可行。
 
 ## 3. 启动应用
 

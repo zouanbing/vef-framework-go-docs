@@ -20,8 +20,8 @@ VEF 提供一套与 provider 无关的存储抽象、三种内置 provider、分
 
 如果希望 storage 模块在启动时创建所需表，设置
 `vef.storage.auto_migrate = true`。迁移是幂等的，会检查
-`sys_storage_upload_claim`、`sys_storage_upload_part` 和
-`sys_storage_pending_delete`。
+`sys_storage_upload_claim`、`sys_storage_upload_part`、
+`sys_storage_pending_delete` 和 `sys_storage_file`。
 
 ## `storage.Service` 接口
 
@@ -80,6 +80,16 @@ type Multipart interface {
 | `abort_upload` | Bearer 认证（引擎默认） | `AbortUploadParams` | 成功，无 `data` 载荷 | 中止并释放 session |
 
 下载通过下方代理中间件提供。
+
+### 文件注册表资源：`sys/storage/file`
+
+一个独立的只读资源（`sys/storage/file`），暴露一个 action：
+
+| Action | 访问方式 | 入参 | 出参 | 作用 |
+| --- | --- | --- | --- | --- |
+| `file/resolve` | Bearer 认证（引擎默认） | `ResolveParams` | `ResolveResult` | 批量解析 object key（≤ 200）为文件元数据——原始文件名、内容类型、大小、状态、上传时间。调用方不可见的 key 会被静默省略。 |
+
+该资源故意与分片上传协议分离：它是持久文件注册表上的查询接口，而非分片上传状态机的一步。授权逻辑与下载代理一致——`pub/` 下的 key 公开可读，其余 key 经过 `storage.FileACL.CanRead`。
 
 五个 action 均未声明 per-action 权限、public 标志、自定义限流或审计日志，
 因此全部继承 API 引擎默认值：Bearer 认证加默认限流（每 5 分钟滑动窗口 100
@@ -240,8 +250,7 @@ action。`public` 标志默认按私有处理，只有 `vef.storage.allow_public
   `result.ErrAccessDenied` 拒绝。
 - 只有 `pending` claim 会被中止。对 `uploaded` claim 调用是 no-op 成功
   —— abort 绝不会删除已完成的对象。
-- pending claim 的后端 session 会被中止（失败时返回
-  `ErrCodeAbortFailed`），已发布的对象字节会被删除，最后在同一事务里删掉
+- pending claim 的后端 session 会被中止，已发布的对象字节会被删除，最后在同一事务里删掉
   part 行与 claim 行。
 - 成功响应没有载荷：`data` 为 `null`。
 
@@ -395,7 +404,10 @@ Abort 是幂等的：未知或已中止的 `claimId` 仍返回 `code: 0`。只�
 curl -O http://localhost:8080/storage/files/pub/2026/07/09/6c9e6f0e-8d5a-4d5e-9a3b-2f4a1c7e9b21.pdf
 ```
 
-`pub/*` key 匿名可读。其他 key 由代理带着请求 principal 调用 `FileACL.CanRead`；框架自身不会在这个路由上解析 token，所以私有下载既需要注册 `FileACL`，也需要在 app 层挂设置 principal 的中间件（见下方代理中间件小节）。
+`pub/*` key 匿名可读。其他 key 由代理从 `Authorization: Bearer`（或浏览
+器场景下的 `?__accessToken=`）解析请求 principal，再调用
+`FileACL.CanRead`。无凭证的请求会把 nil principal 传给 ACL（ACL 自身是授
+权机构，可以放行匿名读）；凭证存在但无效的请求会被拒绝。
 
 ## 可见性前缀
 
@@ -434,9 +446,54 @@ GET /storage/files/<key>
 | --- | --- |
 | 路由 | 名为 `storage_proxy`、顺序为 `900` 的 app 中间件；不是 RPC action，也不由 API engine 分发 |
 | key 校验 | 对 `<key>` 做一次 URL 解码；拒绝空 key、绝对路径、`..` 片段、反斜杠、NUL 字节、重复斜杠和结尾斜杠 |
-| 访问控制 | `pub/*` 匿名可读；其他 key 都会带着请求 principal 调用 `FileACL.CanRead` |
+| 访问控制 | `pub/*` 匿名可读；其他 key 都会带着请求 principal 调用 `FileACL.CanRead`。代理仅对非 `pub/` key 从 `Authorization: Bearer` 或 `?__accessToken=` 解析 principal —— 凭证存在但无效时会被拒绝，无凭证的请求把 nil 传给 ACL。 |
 | Content-Type | 优先使用后端 metadata 或扩展名探测结果，再把不安全类型清洗为 `application/octet-stream`；总是发送 `X-Content-Type-Options: nosniff` |
 | 缓存 header | `pub/*` 返回 `Cache-Control: public, max-age=3600, immutable`，如果 stat 数据有 ETag 也会返回 `ETag`；非公开 key 返回 `Cache-Control: private, no-store` 且不返回 `ETag` |
+
+## 文件注册表
+
+每个上传的文件都会被记录在持久化的注册表（`sys_storage_file`，公开模型
+`storage.FileRecord`）中。注册表的意义在于：当短暂的 upload claim 行被业务
+采纳删除后，只有注册表能回答"这个 key 对应什么文件"。
+
+```go
+type FileRegistry interface {
+    Lookup(ctx context.Context, keys []string) (map[string]FileRecord, error)
+}
+```
+
+`FileRecord` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `key` | `string` | 存储 object key，也是自然的关联键 |
+| `originalFilename` | `string` | 上传时客户端提供的文件名 |
+| `contentType` | `string` | 清洗后的 MIME 类型 |
+| `size` | `int64` | 对象字节数 |
+| `public` | `bool` | 该对象是否落在公开前缀下 |
+| `status` | `string` | 生命周期状态：`uploaded` → `claimed` → `deleted` |
+| `startedAt` | 时间戳 | 上传 session 的开启时间 |
+| `claimedAt` | 时间戳 | 业务事务采纳时间；未被引用时为 nil |
+| `deletedAt` | 时间戳 | delete worker 删除时间；对象仍存在时为 nil |
+| `deleteReason` | `string` | 删除原因；删除前为空 |
+
+`FileStatus` 取值：
+
+| 常量 | 值 | 含义 |
+| --- | --- | --- |
+| `FileStatusUploaded` | `uploaded` | 对象已在后端最终化，尚未被业务引用 |
+| `FileStatusClaimed` | `claimed` | 业务事务已采纳此上传 |
+| `FileStatusDeleted` | `deleted` | delete worker 已从后端删除对象 |
+
+注册表记录是 upload claim 的投影——每个字段都从 claim 行复制而来。下载代理
+通过注册表解析每个 key，以返回 RFC 6266 `Content-Disposition` 和原始文件名。
+
+`FileRegistry` 刻意设计为只读。记录上传是框架自身的完整性不变量，在最终化
+上传的事务中完成。业务代码通过 DI 注入 `FileRegistry`，按存储 key 渲染文件
+名。
+
+`sys/storage/file.resolve` RPC action 也使用注册表——客户端批量查询，按 key
+经 ACL 鉴权，与代理行为一致。
 
 ## 上传 Claim 与 Pending Delete（生命周期）
 
@@ -621,6 +678,8 @@ replacements)` 用于重写已渲染内容里的嵌入 URL，通常和
 | `DeleteReasonReplaced` | `replaced` | `uploaded_file` 字段被新值覆盖 |
 | `DeleteReasonDeleted` | `deleted` | 拥有该 key 的业务行被删 |
 | `DeleteReasonClaimExpired` | `claim_expired` | pending claim 超时（仅框架内 sweeper 使用） |
+| `DeleteReasonAborted` | `aborted` | 上传方取消了进行中的上传（仅框架内 `abort_upload` 使用） |
+| `DeleteReasonOrphaned` | `orphaned` | 上传已完成但未被业务事务采纳（仅框架内 claim sweeper 使用） |
 
 dead-letter 事件携带清洗后的 `lastError` 分类，而不是原始后端错误。
 当前取值是 `access_denied`、`bucket_not_found`、`session_not_found` 和
@@ -632,10 +691,11 @@ dead-letter 事件携带清洗后的 `lastError` 分类，而不是原始后端�
 | --- | --- |
 | 事件构造器 | `EventTypeFileClaimed`, `EventTypeFileDeleted`, `EventTypeDeleteDeadLetter`, `NewFileClaimedEvent`, `NewFileDeletedEvent`, `NewDeleteDeadLetterEvent` |
 | 门面构造器 | `NewFiles`, `NewFilesFor`, `MultipartFor` |
-| 生命周期服务 | `ClaimConsumer`, `DeleteEnqueuer`, `Files`, `FilesFor[T]` |
+| 生命周期服务 | `ClaimConsumer`, `DeleteEnqueuer`, `Files`, `FilesFor[T]`, `FileRegistry` |
 | 存储接口 | `Service`, `Multipart`, `FileACL`, `URLKeyMapper` |
 | URL mapper | `DefaultFileACL`, `IdentityURLKeyMapper`, `ProxyURLKeyMapper`, `DefaultProxyPrefix` |
 | metadata helper | `CanonicalizeMetadataKeys` |
+| 注册表类型 | `FileRecord`, `FileStatus`, `FileStatusUploaded`, `FileStatusClaimed`, `FileStatusDeleted` |
 | option struct | `PutObjectOptions`, `GetObjectOptions`, `DeleteObjectOptions`, `DeleteObjectsOptions`, `CopyObjectOptions`, `StatObjectOptions`, `InitMultipartOptions`, `PutPartOptions`, `CompleteMultipartOptions`, `AbortMultipartOptions` |
 | 结果结构 | `ObjectInfo`, `MultipartSession`, `PartInfo`, `CompletedPart`, `FileRef` |
 | meta 常量 | `MetaType`, `MetaTypeUploadedFile`, `MetaTypeRichText`, `MetaTypeMarkdown` |
@@ -688,7 +748,17 @@ storage 包暴露两类错误值；两类都可以用 `errors.Is` 匹配，但�
 | `2216` | `storage.ErrUploadPartsIncomplete` | `storage_upload_parts_incomplete` | `complete_upload` 时已记录的 parts 少于 `partCount` |
 | `2217` | `storage.ErrUploadObjectNotFound` | `storage_object_not_found` | `complete_upload` 幂等重试：后端 session 已关闭且对象不存在 |
 | `2218` | `storage.ErrUploadSizeMismatch` | `storage_upload_size_mismatch` | 组装后的对象大小与声明的 `size` 不符；返回错误前会先删除该对象 |
-| `2219` | `storage.ErrAbortFailed` | `storage_abort_failed` | 后端拒绝中止 multipart session |
+| `2220` | `storage.ErrInvalidFilename` | `storage_invalid_filename` | `init_upload` 收到了无效的文件名 |
+
+### Storage API 错误码常量
+
+| 常量 | 码 | 触发条件 |
+| --- | --- | --- |
+| `storage.ErrCodeInvalidFileKey` | 2200 | 下载代理（`/storage/files/<key>`）收到不合法的 object key |
+| `storage.ErrCodeFileNotFound` | 2201 | 后端找不到对象 |
+| `storage.ErrCodeFailedToGetFile` | 2202 | 后端读取或 `FileACL` 评估失败 |
+| `storage.ErrCodeClaimNotMultipart` | 2212 | claim 行没有绑定后端 session |
+| `storage.ErrCodeInvalidFilename` | 2220 | `init_upload` 收到了无效的文件名 |
 
 归属越权与未知 claim ID 不在这个编号区间：它们统一用框架通用的
 `result.ErrAccessDenied`（code `1100`，HTTP 403）回答，使 API 不泄露某个

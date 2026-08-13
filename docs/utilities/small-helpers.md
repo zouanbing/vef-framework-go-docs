@@ -253,6 +253,12 @@ without trusted proxies, a raw client-supplied `X-Forwarded-For` is ignored;
 with a trusted proxy configuration, Fiber may honor `X-Forwarded-For` according
 to its proxy settings.
 
+```go
+func IsJSON(ctx fiber.Ctx) bool
+func IsMultipart(ctx fiber.Ctx) bool
+func GetIP(ctx fiber.Ctx) string
+```
+
 ## `version`
 
 Framework version constant.

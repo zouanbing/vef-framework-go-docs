@@ -24,9 +24,10 @@ When enabled, the HTTP endpoint is mounted at:
 The endpoint is a Streamable HTTP MCP endpoint. The app middleware registers it
 for all HTTP methods at middleware order `500`.
 
-Server identity comes from `mcp.ServerInfo` when supplied. Otherwise the server
-name falls back to `vef.app.name`, then to `vef-mcp-server`; the default version
-is `version.VEFVersion`, and default instructions are empty.
+Server identity fields are taken from `mcp.ServerInfo` when the corresponding
+field is non-empty. The server name falls back to `vef.app.name`, then to
+`vef-mcp-server`; the version falls back to `version.VEFVersion`, and
+the default instructions are empty.
 
 ## What The Module Provides
 
@@ -96,7 +97,7 @@ Utility helpers:
 | `mcp.NewToolResultError(message)` | return an error tool result |
 | `mcp.GetPrincipalFromContext(ctx)` | read the authenticated VEF principal from an MCP request, or return `security.PrincipalAnonymous` |
 | `mcp.DBWithOperator(ctx, db)` | bind the MCP principal ID as `orm.PlaceholderKeyOperator` |
-| `mcp.ResourceNotFoundError` | SDK resource-not-found error alias |
+| `mcp.ResourceNotFoundError` | alias of the SDK's `ResourceNotFoundError(uri string) error` constructor; return it from resource handlers when a requested resource does not exist |
 
 ## Dependency-Injection Extension Points
 
@@ -127,7 +128,7 @@ Input arguments:
 
 Behavior notes:
 
-- only read-only `SELECT` statements are permitted; the SQL is checked before
+- only read-only `SELECT` / `SHOW` / `DESCRIBE` statements are permitted; the SQL is checked before
   execution and data-changing CTEs or side-effect statements are rejected
 - `sql` is required and must not be empty
 - results are returned as JSON text content

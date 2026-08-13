@@ -17,6 +17,7 @@ schema 模块会提供：
 | 输出 | 含义 |
 | --- | --- |
 | `schema.Service` | schema 检查服务 |
+| `schema.Table` | 基本表元数据（名称、schema、注释） |
 | `sys/schema` | 内置 RPC 资源 |
 
 ## `schema.Service` 接口
@@ -36,7 +37,7 @@ envelope（`resource`、`action`、`version`、`params`、`meta`）。没有任�
 操作是公开的，也没有声明专门的权限点：每个 action 都继承 API 引擎默认的
 Bearer 认证。
 
-每个 action 都单独设置了 `max 60` 的限流上限。窗口长度未覆写，因此继承
+每个 action 都单独设置了 `Max = 60` 的限流上限。窗口长度未覆写，因此继承
 `vef.api.rate_limit.period`（默认 `5m`）；限流按「操作 + 客户端 IP +
 principal」计数，每个节点在进程内存中独立执行。
 

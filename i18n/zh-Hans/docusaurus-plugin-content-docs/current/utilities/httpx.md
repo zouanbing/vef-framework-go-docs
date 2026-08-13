@@ -43,6 +43,18 @@ if err := resp.JSON(&out); err != nil {
 }
 ```
 
+## 类型
+
+| 类型 | 契约 |
+| --- | --- |
+| `Client` | 不可变 HTTP 客户端，用于调用单个上游服务；可安全并发使用。通过 `New` 为每个第三方系统构建一个。 |
+| `Option` | 函数类型 `func(*clientConfig)`，用于自定义客户端构造。 |
+| `Request` | 一次性流式请求构建器，由 `Client.NewRequest` 创建；重复执行返回 `ErrRequestReused`。 |
+| `Response` | 完全缓冲的调用结果 — 响应体已读取，连接已释放，因此是惰性数据，可安全持有和共享。 |
+| `RetryConfig` | 自动重试策略配置，通过 `WithRetry` 启用。零值字段回退到文档中的默认值。 |
+| `RequestHook` | 钩子类型 `func(req *Request) error`，在请求完全构建后、发送前执行。 |
+| `ResponseHook` | 钩子类型 `func(resp *Response) error`，在响应到达且响应体缓冲后执行。 |
+
 ## Client
 
 `httpx.New(opts ...Option)` 急切校验选项：畸形的 base/proxy URL 与互相
@@ -60,13 +72,40 @@ if err := resp.JSON(&out); err != nil {
 | `WithProxy(url)` | 出站代理 |
 | `WithTLSConfig(cfg)` | 自定义 TLS 配置 |
 | `WithCookieJar(jar)` | 跨调用 Cookie 持久化 |
-| `WithMaxRedirects(n)` | 重定向上限（默认 10；超出返回 `ErrTooManyRedirects`） |
+| `WithMaxRedirects(n)` | 重定向上限（默认 10；0 表示禁用跟随，直接返回 3xx 响应） |
 | `WithMaxResponseBody(n)` | 响应体字节上限（`ErrResponseTooLarge`） |
 | `WithRequestHook(hooks...)` | 在请求完全构建后、发送前执行——签名、审计、日志的挂点；返回错误则中止调用 |
 | `WithResponseHook(hooks...)` | 在响应到达且响应体缓冲后执行 |
 | `WithTransport(rt)` / `WithHTTPClient(hc)` | 自定义传输 / 完全自定义 `http.Client`（与传输层选项互斥——`ErrConflictingOptions`） |
 
 除非应用自行设置，客户端发送 `User-Agent: vef/<version>`。
+
+## 钩子
+
+钩子类型接收最终构造的请求或响应，并通过返回错误来中止调用：
+
+| 类型 | 签名 | 执行时机 |
+| --- | --- | --- |
+| `RequestHook` | `func(req *Request) error` | 请求构建完成后、发送前 |
+| `ResponseHook` | `func(resp *Response) error` | 响应到达且响应体缓冲后 |
+
+`RequestHook` 适合签名、审计或日志；仍然可以修改请求头。
+`ResponseHook` 可检查已缓冲的响应。多个钩子按注册顺序执行。
+
+```go
+client, err := httpx.New(
+    httpx.WithRequestHook(func(req *httpx.Request) error {
+        req.SetHeader("X-Signature", sign(req.Method(), req.Body()))
+        return nil
+    }),
+    httpx.WithResponseHook(func(resp *httpx.Response) error {
+        if resp.StatusCode() >= 500 {
+            metrics.RecordUpstreamError(resp.StatusCode())
+        }
+        return nil
+    }),
+)
+```
 
 ## Request
 
@@ -115,6 +154,39 @@ if err := resp.JSON(&out); err != nil {
 默认策略在传输错误或 `429`/`502`/`503`/`504` 响应时重试，且**仅限幂等
 方法**（GET、HEAD、PUT、DELETE、OPTIONS、TRACE）——除非 `RetryIf` 放行，
 POST 永不重试。
+
+使用 `SetBodyReader` 的流式请求体不可回放，因此即使启用了重试也不会重试。
+
+## 使用 Stub Transport 测试
+
+`WithTransport` 是测试替身、追踪往返以及自定义拨号的接入点。测试套件中
+使用一个小型 `http.RoundTripper` stub：
+
+```go
+type StubTransport struct {
+    status int
+    body   string
+}
+
+func (s *StubTransport) RoundTrip(*http.Request) (*http.Response, error) {
+    return &http.Response{
+        StatusCode: s.status,
+        Status:     fmt.Sprintf("%d %s", s.status, http.StatusText(s.status)),
+        Header:     make(http.Header),
+        Body:       io.NopCloser(strings.NewReader(s.body)),
+    }, nil
+}
+```
+
+把它接入客户端后，每次请求都会返回固定响应，不会真正发出网络请求：
+
+```go
+client, _ := httpx.New(
+    httpx.WithTransport(&StubTransport{status: http.StatusTeapot, body: "stubbed"}),
+)
+
+resp, err := client.NewRequest().Get(ctx, "http://example.test/anything")
+```
 
 ## 错误哨兵
 

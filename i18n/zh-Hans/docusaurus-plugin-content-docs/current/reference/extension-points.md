@@ -72,6 +72,16 @@ Helper：
   `security.SessionRevocationListener`，观察登出、并发登录驱逐与管理员
   踢出；见[会话管理](../security/session-management)
 
+```go
+// security.SessionRevocationListener
+OnSessionsRevoked(ctx context.Context, revocations []SessionRevocation)
+
+type SessionRevocation struct {
+    SessionID string
+    UserID    string
+}
+```
+
 ## 定时任务处理器
 
 - `vef:cron:job_handlers`
@@ -83,6 +93,21 @@ Helper：
 向调度存储注册持久化 `cron.JobHandler`——每个任务名恰好一个处理器，重名
 导致启动失败。处理器可经 `cron.WithDefaultSchedule` 附带默认调度。见
 [持久化调度](../infrastructure/cron-store)。
+
+```go
+// cron.JobHandler
+Name() string
+Execute(ctx context.Context, execution Execution) error
+
+type Execution struct {
+    RunID        string
+    ScheduleID   string
+    ScheduleName string
+    JobName      string
+    ScheduledAt  time.Time
+    Params       json.RawMessage
+}
+```
 
 ## JS 引擎库
 
@@ -194,11 +219,6 @@ Helpers：
 
 ## 存储集成
 
-扩展 group：
-
-- `vef:api:resources`
-- `vef:app:middlewares`
-
 Helpers：
 
 - `vef.SupplyFileACL(...)`
@@ -266,6 +286,12 @@ Helper：
 - `vef.NamedLogger(name)`
 
 当集成代码需要在依赖注入之外获取框架的 `logx.Logger` 时，使用这个 root-package 便捷函数。它返回 `logx.Logger`；`logx` package 本身公开 `Level` 常量、`Level.String()`、`Logger` interface 契约，以及 `LoggerConfigurable[T]`（供 immutable component 通过 `WithLogger` 返回一个配置了 logger 的副本）。
+
+## ORM 事务提交 hook
+
+- `orm.OnCommit(ctx, fn)`——注册一个回调函数，在拥有该上下文的 `orm.DB.RunInTx` 作用域提交后运行。回调接收一个与取消无关的上下文，且不能报告失败；到它运行时事务已经持久化。在活跃的 `RunInTx` / `RunInReadOnlyTx` 作用域之外调用会返回 `orm.ErrNoCommitScope`。
+
+这是"当且仅当外层工作单元已持久化时才执行"的接缝——例如分发进程内事件、失效缓存——而这项工作不能使事务失败。它是 `tx_memory` 事件传输在提交后投递事件的底层机制。
 
 ## 一个简单的判断原则
 

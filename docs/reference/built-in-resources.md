@@ -20,6 +20,7 @@ Unless noted otherwise:
 | --- | --- | --- | --- |
 | `security/auth` | `security` | Mixed: some actions are public, some require Bearer auth | Login flow, token refresh, logout, challenge resolution, current-user info |
 | `sys/storage` | `storage` | Bearer auth by default | Multipart upload session lifecycle (init / part / list / complete / abort). Downloads are served via the `/storage/files/<key>` app proxy, not via RPC. |
+| `sys/storage/file` | `storage` | Bearer auth by default | Resolves object keys to file metadata (original filename, content type, size, status, upload info). ACL-governed like the download proxy. |
 | `sys/schema` | `schema` | Bearer auth by default | Database schema inspection |
 | `sys/monitor` | `monitor` | Bearer auth by default | Runtime and host monitoring data |
 | `sys/cron/schedule`, `sys/cron/run` | `cron` (store) | Bearer auth + `cron.schedule.*` / `cron.run.*` permissions | Durable schedule management and the run journal. Operations mount only when `vef.cron.store.enabled = true` |
@@ -111,6 +112,14 @@ Related HTTP route:
 
 - `/storage/files/<key>` is an app-level download proxy route, not an RPC action.
 - It does not automatically inherit RPC Bearer authentication; `pub/*` is served anonymously and all other keys are governed by `storage.FileACL`.
+
+## `sys/storage/file`
+
+Read-side resource over the durable file registry. Purpose: resolve object keys into the metadata a UI needs to render a file list (original filename, content type, size, status, upload timestamp).
+
+| Action | Access | Rate limit | Purpose | Params |
+| --- | --- | --- | --- | --- |
+| `file/resolve` | Bearer auth required | API engine default | Look up metadata for a batch of object keys (≤ 200). Keys the caller may not read are silently omitted — distinguishing "not yours" from "never existed" would leak file existence. | `ResolveParams` |
 
 ### `init_upload` parameters
 

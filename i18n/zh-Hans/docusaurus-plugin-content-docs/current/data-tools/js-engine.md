@@ -116,15 +116,16 @@ sql.execute('UPDATE ...', args)                            // → { rowsAffected
 ```
 
 - `jssql.New(db, kind, opts...)` 在选定的数据源上构建库；由调用方决定脚本
-  能触达什么。
+  能触达什么。选项类型为 `jssql.Option`（例如 `jssql.WithExecute()`、
+  `jssql.WithMaxRows(n)`）。
 - 只提供占位符绑定——刻意不提供字符串拼接辅助。
 - 默认只读，由 AST 守卫（`sqlguard`）fail-closed 强制：写 CTE、堆叠语句、
   方言特有的副作用函数被拒绝；无法解析的 SQL 一律拒绝
   （`ErrQueryNotReadOnly`）。
 - 未以 `jssql.WithExecute()` 构建时，`sql.execute` 抛出
   `ErrExecuteDisabled`。
-- 结果集有上限（`jssql.WithMaxRows`，默认 1000；`ErrTooManyRows` 提示脚本
-  加 `LIMIT`）。
+- 结果集有上限（`jssql.WithMaxRows`，默认 `jssql.DefaultMaxRows` = 1000；
+  `ErrTooManyRows` 提示脚本加 `LIMIT`）。
 
 ### `jshttp` —— 全局 `http`
 
@@ -143,7 +144,13 @@ http.delete(url, options?)
 - 超出 fetch 的部分：`query` 追加 URL 参数、`timeout`（毫秒）取代
   AbortSignal、`redirect` 支持 `follow` / `error` / `manual`。
 - 默认无任何限制——超时、响应体上限、主机白名单、私网守卫都通过选项
-  （`jshttp.New(opts...)`）按需开启。
+  （`jshttp.New(opts...)`）按需开启，选项类型为 `jshttp.Option`：
+  `jshttp.WithClient(client)` 提供自定义 `http.Client`；
+  `jshttp.WithTimeout(d)` 限制每次请求的超时；
+  `jshttp.WithMaxBodySize(n)` 限制响应体字节数；
+  `jshttp.WithAllowedHosts(hosts...)` 将目标限制在给定主机名白名单内；
+  `jshttp.WithPublicNetworkOnly()` 阻止回环、私有、链路本地、组播以及未指定地址。
+- 错误：`jshttp.ErrInvalidRequest`（调用格式错误）、`jshttp.ErrSchemeNotAllowed`（非 HTTP/HTTPS 协议）、`jshttp.ErrHostNotAllowed`（主机不在白名单内）、`jshttp.ErrAddressNotAllowed`（解析到禁止地址）、`jshttp.ErrBodyTooLarge`（响应体超过上限）、`jshttp.ErrRedirectBlocked`（`redirect` 为 `"error"`）、`jshttp.ErrTooManyRedirects`（重定向链过长）。
 
 ### `jscache` —— 全局 `cache`
 
@@ -158,7 +165,8 @@ cache.delete('counter')
 ```
 
 `jscache.New(store, opts...)` 接受任意 `cache.Cache[any]` —— 单节点状态用
-内存、共享状态用 Redis —— 外加 `WithKeyPrefix` 做键命名空间。
+内存、共享状态用 Redis —— 外加 `WithKeyPrefix` 做键命名空间。选项类型为
+`jscache.Option`（例如 `jscache.WithKeyPrefix(prefix)`）。
 
 ### `jsevents` —— 全局 `events`
 
@@ -168,8 +176,11 @@ events.publish('report.generated', { reportId: id })
 
 负载 JSON 编码后以 `event.RawPayload` 发布，Go 订阅方照常用
 `event.SubscribeTyped` 解码。publish 刻意是唯一动词——订阅是长生命周期的，
-属于宿主而不属于按执行创建的运行时。`jsevents.WithAllowedTypes(patterns...)`
+属于宿主而不属于按执行创建的运行时。`jsevents.New(bus, opts...)` 的选项
+类型为 `jsevents.Option`；`jsevents.WithAllowedTypes(patterns...)`
 可约束可发布的类型命名空间。
+
+- 错误：`jsevents.ErrEmptyEventType`（事件类型为空）、`jsevents.ErrEventTypeNotAllowed`（事件类型不在白名单内）。
 
 ### `jscrypto` —— 全局 `crypto`
 
@@ -183,6 +194,8 @@ crypto.uuid()
 
 摘要为小写 hex；输入为 UTF-8 字符串。弱摘要（md5、sha1）只为兼容遗留 API
 签名——密码存储属于安全模块的编码器。
+
+- 错误：`jscrypto.ErrUnsupportedAlgorithm`（`crypto.hmac` 使用了不支持的算法）。
 
 ### `jsconsole` —— 全局 `console`
 
@@ -215,6 +228,11 @@ rt, err := engine.NewRuntime(js.EnableLibs("fmtx"))
 ```
 
 ## 编译辅助
+
+`js` 包暴露了 goja pass-through surface：类型别名（`Runtime`、`Value`、
+`Object`、`Program`、`AstProgram`）和函数别名（`Compile`、`MustCompile`、
+`Is*`）镜像了上游 `github.com/dop251/goja` API。每个精确符号和签名都列在
+public API index 中。
 
 | API | 契约 |
 | --- | --- |

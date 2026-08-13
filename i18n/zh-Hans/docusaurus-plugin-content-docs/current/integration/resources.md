@@ -48,7 +48,7 @@ sidebar_position: 5
 | `code` | `string` | 是 | 业务代码调用的唯一契约编码 |
 | `name` | `string` | 是 | 显示名 |
 | `description` | `string` | 否 | 自由描述 |
-| `labels` | `object`（string→string） | 否 | 宿主自有的筛选元数据；键不允许含点号，键/值有长度上限（`ErrInvalidLabel`） |
+| `labels` | `object`（string→string） | 否 | 宿主自有的筛选元数据；键必须匹配 `^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?$`（至多 63 字符），值至多 256 字符（`ErrInvalidLabel`） |
 | `inputSchema` | JSON Schema 对象 | 否 | 自包含的 draft 2020-12 输入 Schema；为空则跳过输入校验 |
 | `outputSchema` | JSON Schema 对象 | 否 | 适配器返回值的自包含 Schema；为空则跳过输出校验 |
 | `isEnabled` | `bool` | 否 | 禁用的契约拒绝调用（`ErrContractDisabled`） |
@@ -114,14 +114,14 @@ sidebar_position: 5
 | `request` | `string` | 包装脚本：以 `request`（`{ method, path, headers, query, body }`）接收适配器发出的请求，返回真正上线的请求；省略的字段保持适配器原值 |
 | `response` | `string` | 解包脚本：以 `response`（fetch Response 形态）接收完成的 HTTP 响应；其返回值即适配器调用的所得 |
 
-信封存在时至少要配置两者之一，且系统必须具备 HTTP 传输
-（`ErrInvalidEnvelope`）。
+信封存在时至少要配置两者之一，已配置的脚本必须可编译，且系统必须具备
+HTTP 传输（`ErrInvalidEnvelope`）。
 
 `DataSourceConfig`：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `kind` | `string` | 数据库类型（与 `vef.data_sources.type` 相同词汇：`postgres`、`mysql`、`sqlite`、`sqlserver`、`oracle`） |
+| `kind` | `string` | 数据库类型，配置数据源时必填（`ErrInvalidDataSource`）；与 `vef.data_sources.type` 相同词汇：`postgres`、`mysql`、`sqlite`、`sqlserver`、`oracle` |
 | `mode` | `string` | 脚本写权限：`read_only`（默认；`sql.execute` 抛错）或 `read_write`（启用 `sql.execute`） |
 | `host` | `string` | 服务器主机 |
 | `port` | `int` | 服务器端口 |
@@ -176,8 +176,8 @@ sidebar_position: 5
 
 ## `integration/route`
 
-路由规则。契约引用在保存时校验，因为契约列携带空字符串通配哨兵、没有外键
-（`ErrInvalidRouteRef`）。
+路由规则。契约与系统引用均在保存时校验——契约列携带空字符串通配哨兵、
+没有外键（`ErrInvalidRouteRef`）。
 
 | 操作 | 权限 | 输入 | 输出 |
 | --- | --- | --- | --- |
@@ -235,12 +235,12 @@ sidebar_position: 5
 | --- | --- | --- | --- |
 | `id` | `string` | 仅 update | 主键 |
 | `systemId` | `string` | 是 | 所属系统 |
-| `codeSet` | `string` | 是 | 被翻译码值集标识（如 `gender`）；宿主注册目录时受目录约束 |
+| `codeSet` | `string` | 是 | 被翻译码值集标识（如 `gender`）；宿主注册目录时受目录约束；必须匹配 `^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`，至多 128 字符（`ErrInvalidCodeMap`） |
 | `name` | `string` | 是 | 显示名 |
 | `entries` | `CodeMapEntry[]` | 否 | 映射对（见下）；任一侧重复查找值被拒绝（`ErrInvalidCodeMap`） |
-| `onUnmapped` | `string` | 否 | `reject`（省略时默认——fail closed）、`passthrough` 或 `fallback` |
-| `fallbackCanonical` | 任意 JSON 值 | 否 | `fallback` 策略下 `toCanonical` 对未映射输入返回的值 |
-| `fallbackExternal` | 任意 JSON 值 | 否 | `fallback` 策略下 `toExternal` 对未映射输入返回的值 |
+| `onUnmapped` | `string` | 否 | `reject`（省略时默认——fail closed）、`passthrough` 或 `fallback`；其他值被拒绝（`ErrInvalidCodeMap`） |
+| `fallbackCanonical` | 任意 JSON 值 | 否 | `fallback` 策略下 `toCanonical` 对未映射输入返回的值；`onUnmapped` 为 `fallback` 时必填，其他策略下禁止（`ErrInvalidCodeMap`） |
+| `fallbackExternal` | 任意 JSON 值 | 否 | `fallback` 策略下 `toExternal` 对未映射输入返回的值；`onUnmapped` 为 `fallback` 时必填，其他策略下禁止（`ErrInvalidCodeMap`） |
 | `isEnabled` | `bool` | 否 | 禁用的映射视同不存在（`ErrMissingCodeMap`） |
 
 `CodeMapEntry`：
@@ -255,7 +255,9 @@ sidebar_position: 5
 ## `integration/code_set`
 
 宿主标准码值目录的只读视图，服务于映射编辑器的选择器。它按能力降级：没有
-`mold.CodeSetInspector` 时两个操作都返回 `supported: false`。
+`mold.CodeSetInspector` 时两个操作都返回 `supported: false`。存在 inspector 时，
+目录应答失败会以 `ErrCodeSetCatalogFailed` 拒绝两个操作——码值映射保存时标识
+无法经目录确认也同样报此错误。
 
 | 操作 | 权限 | 输入 | 输出 |
 | --- | --- | --- | --- |
@@ -455,13 +457,13 @@ sidebar_position: 5
 
 `kind` 词汇表：
 
-| 类别 | 含义 |
-| --- | --- |
-| `dangling_adapter` | 契约限定路由的目标系统对该契约没有已启用适配器——经此规则调用将得到 `ErrAdapterNotFound` |
-| `wildcard_gap` | 某个已启用契约无法由通配（或默认）路由服务，因为目标系统对它没有已启用适配器。提示性 |
-| `disabled_system` | 已启用路由指向被禁用的系统——经此调用将得到 `ErrSystemDisabled` |
-| `disabled_contract` | 已启用路由限定到被禁用的契约——该规则永远无法命中成功调用 |
-| `uncovered_contract` | 某个已启用契约在路由表现有的某个键下解析不到任何规则——用该键调用将得到 `ErrRouteNotFound`。当该键有意只路由子集时为提示性 |
+| 常量 | 类别 | 含义 |
+| --- | --- | --- |
+| `RouteFindingDanglingAdapter` | `dangling_adapter` | 契约限定路由的目标系统对该契约没有已启用适配器——经此规则调用将得到 `ErrAdapterNotFound` |
+| `RouteFindingWildcardGap` | `wildcard_gap` | 某个已启用契约无法由通配（或默认）路由服务，因为目标系统对它没有已启用适配器。提示性 |
+| `RouteFindingDisabledSystem` | `disabled_system` | 已启用路由指向被禁用的系统——经此调用将得到 `ErrSystemDisabled` |
+| `RouteFindingDisabledContract` | `disabled_contract` | 已启用路由限定到被禁用的契约——该规则永远无法命中成功调用 |
+| `RouteFindingUncoveredContract` | `uncovered_contract` | 某个已启用契约在路由表现有的某个键下解析不到任何规则——用该键调用将得到 `ErrRouteNotFound`。当该键有意只路由子集时为提示性 |
 
 ## 另请参阅
 

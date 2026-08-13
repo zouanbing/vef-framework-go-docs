@@ -39,8 +39,22 @@ Each `CodeMapEntry` is one bidirectional pair:
 - Values keep their JSON type (string, number, boolean) end to end; lookups
   compare by normalized string form, so `1` and `"1"` address the same entry.
 - Save-time validation rejects duplicate lookup values per side across
-  primaries and aliases (`ErrInvalidCodeMap`), so every lookup is
-  deterministic.
+  primaries and aliases, an unknown unmapped policy, a `codeSet` outside
+  `^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$` (128 characters max), and
+  fallback values incoherent with the policy — `fallback` requires both
+  `fallbackCanonical` and `fallbackExternal`, any other policy forbids them
+  (`ErrInvalidCodeMap`), so every lookup is deterministic.
+
+### Unmapped policy
+
+`UnmappedPolicy` declares how a code map answers a lookup no entry matches.
+
+| Symbol | Value | Meaning |
+| --- | --- | --- |
+| `UnmappedPolicy` | `string` | type declaring how a code map answers a lookup no entry matches |
+| `UnmappedPolicyReject` | `reject` | fails the lookup with `ErrUnmappedValue`; empty policy defaults to this |
+| `UnmappedPolicyPassthrough` | `passthrough` | returns the input value unchanged |
+| `UnmappedPolicyFallback` | `fallback` | returns the map's configured fallback value for the lookup's target side |
 
 ## The `codes` Script Library
 

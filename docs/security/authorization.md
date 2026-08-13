@@ -89,7 +89,11 @@ Good examples:
 - `sys.user.create`
 - `approval.delegation.update`
 
-These tokens stay stable even if the exact request payload changes.
+These tokens stay stable even if the exact request payload changes. The
+framework enforces the dot-separated convention: a permission token must be
+one or more segments of letters, digits, and underscores joined by dots
+(`[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*`). Other separators silently split the
+same logical permission into two.
 
 ## What Happens On Failure
 
