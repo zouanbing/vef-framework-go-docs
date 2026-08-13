@@ -224,20 +224,21 @@ func verifyCoverage(
 	contract contractEntry,
 ) []string {
 	var failures []string
-	expected := []string{englishExtensionPath}
+	reviewExpected := []string{englishExtensionPath, "docs/data-access/datasources.md"}
 	manifestExpected := []string{englishExtensionPath, "docs/data-access/datasources.md"}
+	contractExpected := []string{englishExtensionPath}
 	if !sameSet(manifestEntry.Coverage, manifestExpected) {
 		failures = append(failures, fmt.Sprintf("manifest datasource coverage mismatch: got %v want %v", manifestEntry.Coverage, manifestExpected))
 	}
-	if !sameSet(review.Coverage, expected) {
-		failures = append(failures, fmt.Sprintf("contract package review datasource coverage mismatch: got %v want %v", review.Coverage, expected))
+	if !sameSet(review.Coverage, reviewExpected) {
+		failures = append(failures, fmt.Sprintf("contract package review datasource coverage mismatch: got %v want %v", review.Coverage, reviewExpected))
 	}
-	if !sameSet(contract.Coverage, expected) {
-		failures = append(failures, fmt.Sprintf("contract entry datasource coverage mismatch: got %v want %v", contract.Coverage, expected))
+	if !sameSet(contract.Coverage, contractExpected) {
+		failures = append(failures, fmt.Sprintf("contract entry datasource coverage mismatch: got %v want %v", contract.Coverage, contractExpected))
 	}
 	for _, entry := range entries {
 		if !sameSet(entry.Coverage, manifestExpected) {
-			failures = append(failures, fmt.Sprintf("audit entry %s coverage mismatch: got %v want %v", entry.ID, entry.Coverage, expected))
+			failures = append(failures, fmt.Sprintf("audit entry %s coverage mismatch: got %v want %v", entry.ID, entry.Coverage, manifestExpected))
 		}
 	}
 

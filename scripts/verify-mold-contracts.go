@@ -18,18 +18,18 @@ import (
 const (
 	moldPackage = "github.com/coldsmirk/vef-framework-go/mold"
 
-	moldFingerprint = "42c01cc63b24bafe689f8da49350ea05675c9089cf88d6f02f5ac9ea478d0859"
-	moldTopLevel    = 17
-	moldFields      = 1
-	moldMethods     = 23
-	moldEntries     = 41
+	moldFingerprint = "35c31918465ae4e3c0c4f794b7ca357bd9b0b74ad8c290527939d2279ac45895"
+	moldTopLevel    = 20
+	moldFields      = 5
+	moldMethods     = 25
+	moldEntries     = 50
 
-	moldGroupedEntries              = 24
-	moldGroupedFields               = 1
-	moldGroupedMethods              = 23
-	moldGroupedReceivers            = 12
-	moldGroupedSignatureFingerprint = "c13ba6272799d3e2c0caecc57285bc41e21286a5d29975421c0910c29950fe5d"
-	moldGroupedReceiverFingerprint  = "894ac12de35dbfce1502fb244901535292680957f9b5650e02c2b351af0a100f"
+	moldGroupedEntries              = 30
+	moldGroupedFields               = 5
+	moldGroupedMethods              = 25
+	moldGroupedReceivers            = 15
+	moldGroupedSignatureFingerprint = "99880ec829c58e376b4d0fe482f928e8fd30e60cd74b600ecbc2a3f91c5693bc"
+	moldGroupedReceiverFingerprint  = "2c2f8abe476cdd0d936e23b78e70e6d5f22f6086c18448144f646370003fc44e"
 
 	englishMoldPath  = "docs/data-tools/mold.md"
 	chineseMoldPath  = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-tools/mold.md"
@@ -155,7 +155,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Mold contract docs verified: 41 public entries, 24 grouped transformer entries, tag grammar and default transformer boundary")
+	fmt.Println("Mold contract docs verified: 50 public entries, 30 grouped transformer entries, tag grammar and default transformer boundary")
 }
 
 func verifySurfaceEntry(label string, entry manifestEntry) []string {
@@ -199,8 +199,8 @@ func verifyManifest(m manifest) []string {
 func verifyContractLedger(contracts contractLedger, sourceRoot string) []string {
 	expectedContracts := map[string][]string{
 		moldPackage + "#event-contract:dictionary-cache-invalidation": {
-			"DictionaryChangedEvent",
-			"PublishDictionaryChangedEvent",
+			"CodeSetChangedEvent",
+			"PublishCodeSetChangedEvent",
 			"Keys",
 			"Resolve",
 		},
@@ -217,10 +217,10 @@ func verifyContractLedger(contracts contractLedger, sourceRoot string) []string 
 			"0x2C",
 		},
 		moldPackage + "#string-contract:translate-transformer": {
-			"translate=dict:",
+			"translate=codes:",
 			"<Field>Name",
 			"user?",
-			"dict:status?",
+			"codes:status?",
 		},
 	}
 
@@ -443,20 +443,20 @@ func verifyMoldDocs(entries []auditEntry, englishDocs, chineseDocs corpus) []str
 		"`endkeys`",
 		"`0x2C`",
 		"`translate`",
-		"translate=dict:",
+		"translate=codes:",
 		"`<Field>Name`",
 		"`user?`",
-		"`dict:status?`",
-		"`DictionaryChangedEvent`",
-		"`PublishDictionaryChangedEvent`",
+		"`codes:status?`",
+		"`CodeSetChangedEvent`",
+		"`PublishCodeSetChangedEvent`",
 		"Keys",
 		"`Resolve`",
-		"`DictionaryLoader`",
+		"`CodeSetLoader`",
 		"`event.Bus`",
-		"`NewCachedDictionaryResolver`",
-		"`DictionaryLoaderFunc`",
-		"`DictionaryTranslator`",
-		"`DictionaryResolver`",
+		"`NewCachedCodeSetResolver`",
+		"`CodeSetLoaderFunc`",
+		"`CodeSetTranslator`",
+		"`CodeSetResolver`",
 		"mold:\"expr=price * qty\"",
 		"`expression.Engine`",
 		"`vef:mold:field_transformers`",
@@ -476,8 +476,7 @@ func verifyMoldDocs(entries []auditEntry, englishDocs, chineseDocs corpus) []str
 	var failures []string
 	for _, doc := range []corpus{englishDocs, chineseDocs} {
 		for _, symbol := range topSymbols {
-			if !strings.Contains(doc.content, "`"+symbol+"`") &&
-				!strings.Contains(doc.content, "`mold."+symbol+"`") {
+			if !documentedMoldSymbol(doc.content, symbol) {
 				failures = append(failures, doc.label+" missing top-level mold symbol `"+symbol+"`")
 			}
 		}
@@ -532,28 +531,28 @@ func verifySourceTerms(sourceRoot string) []string {
 				"type Translator interface",
 				"Supports(kind string) bool",
 				"Translate(ctx context.Context, kind, value string) (string, error)",
-				"type DictionaryResolver interface",
-				"Resolve(ctx context.Context, key, code string) (string, error)",
-				"type DictionaryLoader interface",
-				"Load(ctx context.Context, key string) (map[string]string, error)",
+				"type CodeSetResolver interface",
+				"Resolve(ctx context.Context, codeSet, code string) (string, error)",
+				"type CodeSetLoader interface",
+				"Load(ctx context.Context, codeSet string) (map[string]string, error)",
 			},
 		},
 		{
-			path: "mold/cached_dictionary_resolver.go",
+			path: "mold/cached_code_set_resolver.go",
 			terms: []string{
-				"eventTypeDictionaryChanged = \"vef.translate.dictionary.changed\"",
-				"type DictionaryLoaderFunc func(ctx context.Context, key string) (map[string]string, error)",
-				"func (f DictionaryLoaderFunc) Load(ctx context.Context, key string) (map[string]string, error)",
-				"type DictionaryChangedEvent struct",
+				"eventTypeCodeSetChanged = \"vef.translate.code_set.changed\"",
+				"type CodeSetLoaderFunc func(ctx context.Context, codeSet string) (map[string]string, error)",
+				"func (f CodeSetLoaderFunc) Load(ctx context.Context, codeSet string) (map[string]string, error)",
+				"type CodeSetChangedEvent struct",
 				"Keys []string `json:\"keys\"`",
-				"func (*DictionaryChangedEvent) EventType() string { return eventTypeDictionaryChanged }",
-				"func PublishDictionaryChangedEvent(ctx context.Context, bus event.Bus, keys ...string) error",
-				"func NewCachedDictionaryResolver(",
-				"panic(\"NewCachedDictionaryResolver requires a non-nil DictionaryLoader, but got nil\")",
-				"panic(\"NewCachedDictionaryResolver requires a non-nil event.Bus, but got nil\")",
-				"event.SubscribeTyped[*DictionaryChangedEvent](bus, resolver.handleInvalidation)",
-				"func (r *CachedDictionaryResolver) Resolve(ctx context.Context, key, code string) (string, error)",
-				"if key == \"\" || code == \"\"",
+				"func (*CodeSetChangedEvent) EventType() string { return eventTypeCodeSetChanged }",
+				"func PublishCodeSetChangedEvent(ctx context.Context, bus event.Bus, keys ...string) error",
+				"func NewCachedCodeSetResolver(",
+				"panic(\"NewCachedCodeSetResolver requires a non-nil CodeSetLoader, but got nil\")",
+				"panic(\"NewCachedCodeSetResolver requires a non-nil event.Bus, but got nil\")",
+				"event.SubscribeTyped[*CodeSetChangedEvent](bus, resolver.handleInvalidation)",
+				"func (r *CachedCodeSetResolver) Resolve(ctx context.Context, codeSet, code string) (string, error)",
+				"if codeSet == \"\" || code == \"\"",
 				"return r.cache.Invalidate(ctx, evt.Keys...)",
 			},
 		},
@@ -561,7 +560,7 @@ func verifySourceTerms(sourceRoot string) []string {
 			path: "internal/mold/module.go",
 			terms: []string{
 				"fx.Decorate(",
-				"func(loader mold.DictionaryLoader, bus event.Bus) mold.DictionaryResolver",
+				"func(loader mold.CodeSetLoader, bus event.Bus) mold.CodeSetResolver",
 				"fx.ParamTags(`optional:\"true\"`)",
 				"NewTransformer",
 				"`group:\"vef:mold:field_transformers\"`",
@@ -569,7 +568,7 @@ func verifySourceTerms(sourceRoot string) []string {
 				"`group:\"vef:mold:interceptors\"`",
 				"NewTranslateTransformer",
 				"`group:\"vef:mold:translators\"`",
-				"NewDictionaryTranslator",
+				"NewCodeSetTranslator",
 			},
 		},
 		{
@@ -629,15 +628,15 @@ func verifySourceTerms(sourceRoot string) []string {
 			},
 		},
 		{
-			path: "internal/mold/dictionary_translator.go",
+			path: "internal/mold/code_set_translator.go",
 			terms: []string{
-				"dictKeyPrefix = \"dict:\"",
-				"type DictionaryTranslator struct",
-				"func (*DictionaryTranslator) Supports(kind string) bool",
-				"return strings.HasPrefix(kind, dictKeyPrefix)",
-				"func (t *DictionaryTranslator) Translate(ctx context.Context, kind, value string) (string, error)",
-				"dictKey := kind[len(dictKeyPrefix):]",
-				"func NewDictionaryTranslator(resolver mold.DictionaryResolver) mold.Translator",
+				"codeSetKeyPrefix = \"codes:\"",
+				"type CodeSetTranslator struct",
+				"func (*CodeSetTranslator) Supports(kind string) bool",
+				"return strings.HasPrefix(kind, codeSetKeyPrefix)",
+				"func (t *CodeSetTranslator) Translate(ctx context.Context, kind, value string) (string, error)",
+				"codeSet := kind[len(codeSetKeyPrefix):]",
+				"func NewCodeSetTranslator(resolver mold.CodeSetResolver) mold.Translator",
 			},
 		},
 		{
@@ -908,6 +907,21 @@ func contains(values []string, want string) bool {
 func containsNormalized(content, term string) bool {
 	return strings.Contains(content, term) ||
 		strings.Contains(strings.Join(strings.Fields(content), " "), strings.Join(strings.Fields(term), " "))
+}
+
+func documentedMoldSymbol(content, symbol string) bool {
+	patterns := []string{
+		"`" + symbol + "`",
+		"`mold." + symbol + "`",
+		"[]" + symbol,
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(content, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func moldCoverage() []string {

@@ -19,18 +19,18 @@ import (
 const (
 	monitorPackage = "github.com/coldsmirk/vef-framework-go/monitor"
 
-	monitorFingerprint = "2dcd6b85f44ba51532759515b9641c9584332b083cddbcf310ad045b7e1ea15c"
-	monitorTopLevel    = 27
-	monitorFields      = 181
+	monitorFingerprint = "dd1b8ef82c63ce9fd95f8f6ee3cdb6c5039c2b3de867a4c42eb9091a777c7b3b"
+	monitorTopLevel    = 28
+	monitorFields      = 185
 	monitorMethods     = 9
-	monitorEntries     = 217
+	monitorEntries     = 222
 
-	monitorGroupedEntries              = 190
-	monitorGroupedFields               = 181
+	monitorGroupedEntries              = 194
+	monitorGroupedFields               = 185
 	monitorGroupedMethods              = 9
-	monitorGroupedReceivers            = 23
-	monitorGroupedSignatureFingerprint = "323c1b9612fb0905a31851a622199f0d0c1c67e7f466935109bcec70d3da76f9"
-	monitorGroupedReceiverFingerprint  = "777aa0b0f78aad775efc5bf8f890af7fb30ec5749424c7919d11aeed39b23fb2"
+	monitorGroupedReceivers            = 24
+	monitorGroupedSignatureFingerprint = "8813f96f38d8b551fd3040b9cb1032bcb72bb3aba467e8c3107feba8eaae8ab6"
+	monitorGroupedReceiverFingerprint  = "a446c156e40257ea6905f5ad683e6166279783df8596c597177491f22f545893"
 
 	englishMonitorPath = "docs/infrastructure/monitor.md"
 	chineseMonitorPath = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/infrastructure/monitor.md"
@@ -299,6 +299,8 @@ func verifyRuntimeActions(runtime runtimeLedger, docs []corpus) []string {
 		"get_process",
 		"get_load",
 		"get_build_info",
+		"get_event_streams",
+		"get_integration_stats",
 	}
 	var failures []string
 	if !resourceFound {

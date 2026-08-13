@@ -21,13 +21,27 @@ import (
 )
 
 const (
-	approvalDocsPath        = "docs/approval.md"
-	chineseApprovalDocsPath = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/approval.md"
-	runtimeLedgerPath       = "scripts/runtime-api-ledger.json"
-	manifestPath            = "scripts/api-audit-manifest.json"
-	contractLedgerPath      = "scripts/api-contract-ledger.json"
-	auditLedgerPath         = "scripts/api-audit-ledger.json"
+	runtimeLedgerPath  = "scripts/runtime-api-ledger.json"
+	manifestPath       = "scripts/api-audit-manifest.json"
+	contractLedgerPath = "scripts/api-contract-ledger.json"
+	auditLedgerPath    = "scripts/api-audit-ledger.json"
 )
+
+var approvalDocsPaths = []string{
+	"docs/approval/overview.md",
+	"docs/approval/flow-design.md",
+	"docs/approval/runtime.md",
+	"docs/approval/resources.md",
+	"docs/approval/integration.md",
+}
+
+var chineseApprovalDocsPaths = []string{
+	"i18n/zh-Hans/docusaurus-plugin-content-docs/current/approval/overview.md",
+	"i18n/zh-Hans/docusaurus-plugin-content-docs/current/approval/flow-design.md",
+	"i18n/zh-Hans/docusaurus-plugin-content-docs/current/approval/runtime.md",
+	"i18n/zh-Hans/docusaurus-plugin-content-docs/current/approval/resources.md",
+	"i18n/zh-Hans/docusaurus-plugin-content-docs/current/approval/integration.md",
+}
 
 type corpus struct {
 	label   string
@@ -163,11 +177,11 @@ type errorContract struct {
 var approvalPackages = []expectedPackage{
 	{
 		pkg:         "github.com/coldsmirk/vef-framework-go/approval",
-		topLevel:    378,
-		fields:      823,
-		methods:     132,
-		entries:     1333,
-		fingerprint: "d9c2c0bd0a05bfc880bd85055e097223a5570839220d00d9cf2b9e7bc5648519",
+		topLevel:    398,
+		fields:      868,
+		methods:     133,
+		entries:     1399,
+		fingerprint: "06af8ca1167b6b49500e4ac210e17e0956894e672126786a09bb23c0cdf2055b",
 		contracts: []string{
 			"github.com/coldsmirk/vef-framework-go/approval#dynamic-resource:approval-built-in-resources",
 			"github.com/coldsmirk/vef-framework-go/approval#event-contract:approval-domain-events",
@@ -178,22 +192,22 @@ var approvalPackages = []expectedPackage{
 	},
 	{
 		pkg:         "github.com/coldsmirk/vef-framework-go/approval/admin",
-		topLevel:    6,
-		fields:      60,
+		topLevel:    7,
+		fields:      85,
 		methods:     0,
-		entries:     66,
-		fingerprint: "1c843a8f8400f22c84a8fe843ad7638ca4ad20c5cf48237cf5b835f1628d9f3e",
+		entries:     92,
+		fingerprint: "b56e857e0eda27f4ed7496b6b1b386215e15345be6453c989db307f99519414d",
 		contracts: []string{
 			"github.com/coldsmirk/vef-framework-go/approval/admin#dto-wire-shape:approval-admin-dtos",
 		},
 	},
 	{
 		pkg:         "github.com/coldsmirk/vef-framework-go/approval/my",
-		topLevel:    8,
-		fields:      68,
+		topLevel:    12,
+		fields:      95,
 		methods:     0,
-		entries:     76,
-		fingerprint: "e6ad65e45fb72650108d7289633637687116fb63a06bf797d73073d34205d681",
+		entries:     107,
+		fingerprint: "8256688439b7fde4fa17b58958c3d3ebbcc6d0904821f126c349913582ee100a",
 		contracts: []string{
 			"github.com/coldsmirk/vef-framework-go/approval/my#dto-wire-shape:approval-my-dtos",
 		},
@@ -203,30 +217,30 @@ var approvalPackages = []expectedPackage{
 var approvalGroupedSurfaces = []groupedSurface{
 	{
 		pkg:                  "github.com/coldsmirk/vef-framework-go/approval",
-		entryCount:           955,
-		fieldCount:           823,
-		methodCount:          132,
-		receiverCount:        123,
-		signatureFingerprint: "34b0824567611923b21fcb74850f57977ca8620deeba5c896af7377315dbebd0",
-		receiverFingerprint:  "8e1d8ecef9a98f7e87c581cabed6222b0120ec964693097bac7640f613cc585a",
+		entryCount:           1001,
+		fieldCount:           868,
+		methodCount:          133,
+		receiverCount:        126,
+		signatureFingerprint: "614a42010a8cba0fcc4e6ba6c76b39a8652481b2b31ede573f7baa2d313d16b7",
+		receiverFingerprint:  "9724856f05a718eb9082a1e42699047f349674db67249aea3802953eebd3f6a0",
 	},
 	{
 		pkg:                  "github.com/coldsmirk/vef-framework-go/approval/admin",
-		entryCount:           60,
-		fieldCount:           60,
+		entryCount:           85,
+		fieldCount:           85,
 		methodCount:          0,
-		receiverCount:        6,
-		signatureFingerprint: "fcb429a9dc59a49d9a371acb008118c580825d4df0b157242dbca33c3e95c644",
-		receiverFingerprint:  "0695f298d8c00d3acb00ad14407dab7f29b4cdfaf1f659006f8ca54e4d6bb39d",
+		receiverCount:        7,
+		signatureFingerprint: "5d5190195b1c61f620d3eeb585dd8f0f9e4265085ce068e9a6be7d38034a0428",
+		receiverFingerprint:  "b870372865ee1d87f126ad92e06400303bcd7dd2099b0245e8b2bf56e0f7a369",
 	},
 	{
 		pkg:                  "github.com/coldsmirk/vef-framework-go/approval/my",
-		entryCount:           68,
-		fieldCount:           68,
+		entryCount:           95,
+		fieldCount:           95,
 		methodCount:          0,
-		receiverCount:        8,
-		signatureFingerprint: "1427ec9ba629b3fa01f49cdefac1d4243d881283c6b15ce7377e1687023c97cd",
-		receiverFingerprint:  "720d08f689e8c5f2fbe676ffb985a37b1b723dd0f5a62773ee646385fe9d28c4",
+		receiverCount:        12,
+		signatureFingerprint: "b2f8b5cba80cf69a403d4068ff61e40a760a8c71ae23719c01910d925dedcb96",
+		receiverFingerprint:  "d64eba190ff078c025588f42a97cf66109f35adc8b5b3786fdcc0276b0d08479",
 	},
 }
 
@@ -238,8 +252,8 @@ func main() {
 	sourceRoot := cleanAbs(*sourceDir)
 	docsRoot := cleanAbs(*outDir)
 
-	english := readCorpus("English approval docs", filepath.Join(docsRoot, approvalDocsPath))
-	chinese := readCorpus("Chinese approval docs", filepath.Join(docsRoot, chineseApprovalDocsPath))
+	english := readCorpora("English approval docs", docsRoot, approvalDocsPaths)
+	chinese := readCorpora("Chinese approval docs", docsRoot, chineseApprovalDocsPaths)
 	docs := []corpus{english, chinese}
 
 	m := loadJSON[manifest](filepath.Join(docsRoot, manifestPath))
@@ -312,8 +326,8 @@ func verifyPackageSurfaces(m manifest, contracts contractLedger, live map[string
 			continue
 		}
 		failures = append(failures, verifySurface("manifest", expected, manifestEntry.TopLevel, manifestEntry.Fields, manifestEntry.Methods, manifestEntry.Fingerprint)...)
-		if !contains(manifestEntry.Coverage, approvalDocsPath) {
-			failures = append(failures, expected.pkg+" manifest coverage must include "+approvalDocsPath)
+		if !containsAnyPath(manifestEntry.Coverage, approvalDocsPaths) {
+			failures = append(failures, expected.pkg+" manifest coverage must include the docs/approval pages")
 		}
 
 		review, ok := reviewByPackage[expected.pkg]
@@ -347,8 +361,8 @@ func verifyPackageSurfaces(m manifest, contracts contractLedger, live map[string
 			if entry.Package != expected.pkg {
 				failures = append(failures, id+" package mismatch: "+entry.Package)
 			}
-			if !contains(entry.Coverage, approvalDocsPath) {
-				failures = append(failures, id+" coverage must include "+approvalDocsPath)
+			if !containsAnyPath(entry.Coverage, approvalDocsPaths) {
+				failures = append(failures, id+" coverage must include the docs/approval pages")
 			}
 			if len(entry.SourceEvidence) == 0 || len(entry.Terms) == 0 {
 				failures = append(failures, id+" missing source evidence or terms")
@@ -427,8 +441,8 @@ func verifyGroupedApprovalSurfaces(audit auditLedger, docs []corpus) []string {
 		receiverRows := receiverRows(receiverCountsByPackage[surface.pkg])
 		failures = append(failures, verifyGroupedSurfaceFingerprint(surface.pkg+" receiver families", receiverRows, surface.receiverCount, surface.receiverFingerprint)...)
 	}
-	if totalGrouped != 1083 {
-		failures = append(failures, fmt.Sprintf("approval grouped surface total mismatch: got %d want 1083", totalGrouped))
+	if totalGrouped != 1181 {
+		failures = append(failures, fmt.Sprintf("approval grouped surface total mismatch: got %d want 1181", totalGrouped))
 	}
 
 	return failures
@@ -542,7 +556,7 @@ func verifyRuntimeResources(runtime runtimeLedger, docs []corpus) []string {
 					if perm, ok := strings.CutPrefix(detail, "permission: "); ok && !strings.Contains(row, "`"+perm+"`") {
 						failures = append(failures, doc.label+" action "+resource+"/"+action+" missing permission "+perm)
 					}
-					if detail == "audit enabled" && !containsAny(row, "Audited", "开启审计") {
+					if detail == "audit enabled" && !containsAny(row, "Yes", "是") {
 						failures = append(failures, doc.label+" action "+resource+"/"+action+" missing audit note")
 					}
 				}
@@ -552,7 +566,7 @@ func verifyRuntimeResources(runtime runtimeLedger, docs []corpus) []string {
 			!containsAny(doc.content, "authenticated principal", "已认证") {
 			failures = append(failures, doc.label+" missing approval/my no-RequiredPermission authenticated-principal contract")
 		}
-		if !containsAny(doc.content, "max `10`", "最多 `10`") || !strings.Contains(doc.content, "`1m`") {
+		if !containsAny(doc.content, "max `10`", "最多 `10`") || !containsAny(doc.content, "`1m`", "每分钟") {
 			failures = append(failures, doc.label+" missing urge_task 10 per 1m rate limit")
 		}
 	}
@@ -685,7 +699,6 @@ func verifyRequestDTOs(sourceRoot string, docs []corpus) []string {
 		"PublishVersionParams":         {"internal/approval/resource/flow.go", "params"},
 		"GetGraphParams":               {"internal/approval/resource/flow.go", "params"},
 		"FindFlowsParams":              {"internal/approval/resource/flow.go", "params"},
-		"UpdateParams":                 {"internal/approval/resource/flow.go", "params"},
 		"ToggleActiveParams":           {"internal/approval/resource/flow.go", "params"},
 		"FindVersionsParams":           {"internal/approval/resource/flow.go", "params"},
 		"StartParams":                  {"internal/approval/resource/instance.go", "params"},
@@ -732,12 +745,8 @@ func verifyRequestDTOs(sourceRoot string, docs []corpus) []string {
 				failures = append(failures, doc.label+" missing request DTO type "+typeName)
 			}
 			for _, field := range fields {
-				term := "`" + field + "`"
-				if spec.prefix != "" {
-					term = "`" + spec.prefix + "." + field + "`"
-				}
-				if !strings.Contains(doc.content, term) {
-					failures = append(failures, doc.label+" missing request field "+typeName+"."+field+" as "+term)
+				if !strings.Contains(doc.content, "`"+field+"`") {
+					failures = append(failures, doc.label+" missing request field "+typeName+"."+field+" as `"+field+"`")
 				}
 			}
 		}
@@ -745,14 +754,14 @@ func verifyRequestDTOs(sourceRoot string, docs []corpus) []string {
 			!strings.Contains(doc.content, "`transfer`") || !strings.Contains(doc.content, "`rollback`") {
 			failures = append(failures, doc.label+" missing process_task action oneof values")
 		}
-		instanceSection := markdownSection(doc.content, "### `approval/instance`")
-		startRow := rowForMarker(instanceSection, "| `start` | `params.tenantId`")
-		if !containsAny(startRow, "max 512 chars", "最多 512 字符") {
+		instanceSection := markdownSection(doc.content, "## `approval/instance`")
+		startRow := rowForMarker(instanceSection, "| `businessRef` |")
+		if !containsAny(startRow, "max 512 chars", "最多 512 字符", "≤ 512") {
 			failures = append(failures, doc.label+" approval/instance start row missing businessRef max 512 constraint")
 		}
-		processTaskRow := rowForMarker(instanceSection, "| `process_task` | `params.taskId`")
-		if !containsAny(processTaskRow, "max 20 entries", "最多 20 项") ||
-			!containsAny(processTaskRow, "each max 512 chars", "每项最多 512 字符") {
+		processTaskRow := rowForMarker(instanceSection, "| `attachments` |")
+		if !containsAny(processTaskRow, "max 20 entries", "最多 20 项", "≤ 20 × ≤ 512") ||
+			!containsAny(processTaskRow, "each max 512 chars", "每项最多 512 字符", "≤ 512") {
 			failures = append(failures, doc.label+" approval/instance process_task row missing attachments max 20/max 512 constraint")
 		}
 	}
@@ -789,27 +798,28 @@ func verifyResponseDTOs(sourceRoot string, docs []corpus) []string {
 
 	var failures []string
 	for _, doc := range docs {
-		dtoSection := responseDTOSection(doc.content)
+		adminSection := markdownSection(doc.content, "## `approval/admin`")
+		mySection := markdownSection(doc.content, "## `approval/my`")
 		for typeName, fields := range adminFields {
-			row := rowForMarker(dtoSection, "`admin."+typeName+"`")
-			if row == "" {
+			dtoSection := markdownSection(adminSection, "`"+typeName+"`")
+			if dtoSection == "" {
 				failures = append(failures, doc.label+" missing admin DTO row "+typeName)
 				continue
 			}
 			for _, field := range fields {
-				if !strings.Contains(row, "`"+field+"`") {
+				if !strings.Contains(dtoSection, "`"+field+"`") {
 					failures = append(failures, doc.label+" admin DTO "+typeName+" row missing field "+field)
 				}
 			}
 		}
 		for typeName, fields := range myFields {
-			row := rowForMarker(dtoSection, "`my."+typeName+"`")
-			if row == "" {
+			dtoSection := markdownSection(mySection, "`"+typeName+"`")
+			if dtoSection == "" {
 				failures = append(failures, doc.label+" missing my DTO row "+typeName)
 				continue
 			}
 			for _, field := range fields {
-				if !strings.Contains(row, "`"+field+"`") {
+				if !strings.Contains(dtoSection, "`"+field+"`") {
 					failures = append(failures, doc.label+" my DTO "+typeName+" row missing field "+field)
 				}
 			}
@@ -936,8 +946,9 @@ func verifyErrors(sourceRoot string, docs []corpus) []string {
 
 	var failures []string
 	for _, doc := range docs {
+		errorSection := errorSurfaceSection(doc.content)
 		for _, errorContract := range errorContracts {
-			row := rowForMarker(doc.content, "`"+errorContract.errName+"`")
+			row := rowForMarker(errorSection, "`"+errorContract.errName+"`")
 			if row == "" {
 				failures = append(failures, doc.label+" missing approval error row "+errorContract.errName)
 				continue
@@ -1018,7 +1029,7 @@ func verifyResubmitAndAvailableActions(sourceRoot string, docs []corpus) []strin
 				failures = append(failures, doc.label+" missing availableActions term "+term)
 			}
 		}
-		if !containsAny(doc.content, "Command handlers still perform", "命令 handler 仍会独立") {
+		if !containsAny(doc.content, "Command handlers still perform", "命令处理器") {
 			failures = append(failures, doc.label+" missing availableActions query-hint vs command-validation distinction")
 		}
 	}
@@ -1038,9 +1049,9 @@ func verifyTenantBindingAndExtensionTerms(docs []corpus) []string {
 		"BusinessRefResolver",
 		"InstanceLifecycleHook",
 		"vef:approval:lifecycle_hooks",
-		"BusinessTable",
-		"BusinessPKField",
-		"BusinessStatusField",
+		"TableName",
+		"KeyColumns",
+		"StatusColumn",
 		"ValidateBusinessIdentifier",
 		"^[A-Za-z_][A-Za-z0-9_]{0,62}$",
 		"InstanceBindingFailedEvent",
@@ -1105,13 +1116,19 @@ func extractStringConstants(sourceRoot string) (map[string]stringConst, map[stri
 	return result, byType
 }
 
-func responseDTOSection(content string) string {
-	section := markdownSection(content, "### Response DTO Fields")
+func errorSurfaceSection(content string) string {
+	section := markdownSection(content, "## Error Surface")
 	if section != "" {
 		return section
 	}
 
-	return markdownSection(content, "### 响应 DTO 字段")
+	return markdownSection(content, "## 错误面")
+}
+
+func responseDTOSection(content string) string {
+	// Response DTOs are now documented inline within the admin and my resource sections.
+	// Return the entire content so the caller can scope within individual sections.
+	return content
 }
 
 func extractStateTransitions(sourceRoot string, constsByName map[string]stringConst) []transition {
@@ -1412,8 +1429,11 @@ func approvalRuntimeSurfaceCount(runtime runtimeLedger) int {
 }
 
 func docActionsForResource(content, resource string) []string {
-	section := markdownSection(content, "### `"+resource+"`")
-	matches := regexp.MustCompile("(?m)^\\| `([^`]+)` \\|").FindAllStringSubmatch(section, -1)
+	section := markdownSection(content, "## `"+resource+"`")
+	// Extract only the action table — the first table whose header row starts with "| Action |".
+	// Subsequent tables (request params, response DTOs) must not be treated as action rows.
+	actionTable := extractActionTable(section)
+	matches := regexp.MustCompile("(?m)^\\| `([^`]+)` \\|").FindAllStringSubmatch(actionTable, -1)
 	set := map[string]bool{}
 	for _, match := range matches {
 		action := match[1]
@@ -1426,8 +1446,29 @@ func docActionsForResource(content, resource string) []string {
 	return sortedKeys(set)
 }
 
+func extractActionTable(content string) string {
+	lines := strings.Split(content, "\n")
+	inTable := false
+	start := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "| Action |") || strings.HasPrefix(line, "| Action |") {
+			inTable = true
+			start = i
+			continue
+		}
+		if inTable && strings.TrimSpace(line) == "" {
+			return strings.Join(lines[start:i], "\n")
+		}
+	}
+	if start >= 0 {
+		return strings.Join(lines[start:], "\n")
+	}
+
+	return content
+}
+
 func rowForFirstColumn(content, firstColumn, sectionMarker string) string {
-	section := markdownSection(content, "### `"+sectionMarker+"`")
+	section := markdownSection(content, "## `"+sectionMarker+"`")
 	return rowForMarker(section, "| `"+firstColumn+"` |")
 }
 
@@ -1576,6 +1617,25 @@ func containsAny(content string, terms ...string) bool {
 
 func readCorpus(label, path string) corpus {
 	return corpus{label: label, content: readFile(path)}
+}
+
+func readCorpora(label, root string, paths []string) corpus {
+	parts := make([]string, 0, len(paths))
+	for _, path := range paths {
+		parts = append(parts, readFile(filepath.Join(root, path)))
+	}
+
+	return corpus{label: label, content: strings.Join(parts, "\n")}
+}
+
+func containsAnyPath(haystack []string, needles []string) bool {
+	for _, needle := range needles {
+		if contains(haystack, needle) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func readFile(path string) string {

@@ -18,18 +18,18 @@ import (
 const (
 	schemaPackage = "github.com/coldsmirk/vef-framework-go/schema"
 
-	schemaFingerprint = "7e874740c91b2aa73d968ffe782ae27256691b6611fa235973111940f27f188e"
-	schemaTopLevel    = 12
-	schemaFields      = 38
+	schemaFingerprint = "46442b02ef84d6f100f772104554c4800758aa43f31e5dbed40a2cef57326132"
+	schemaTopLevel    = 13
+	schemaFields      = 40
 	schemaMethods     = 3
-	schemaEntries     = 53
+	schemaEntries     = 56
 
-	schemaGroupedEntries              = 41
-	schemaGroupedFields               = 38
+	schemaGroupedEntries              = 43
+	schemaGroupedFields               = 40
 	schemaGroupedMethods              = 3
 	schemaGroupedReceivers            = 10
-	schemaGroupedSignatureFingerprint = "fbb57af25a5c2f3364726e554b1c7cd5b6adf69c15e8e2f9877efe6a7a491fda"
-	schemaGroupedReceiverFingerprint  = "06a6a4cd745e4651d3f9962cd32f1f1c07233320ee735e08e3d8e05c9adda521"
+	schemaGroupedSignatureFingerprint = "27c1f5477aced51fd74bac742637e380308d3f8815dcedc4f2cedf2e69018ea3"
+	schemaGroupedReceiverFingerprint  = "4dcac829309823f40c980ea30b832a0d75642bb8e6178ab88c8ab7301b370bde"
 
 	englishSchemaPath   = "docs/infrastructure/schema.md"
 	chineseSchemaPath   = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/infrastructure/schema.md"

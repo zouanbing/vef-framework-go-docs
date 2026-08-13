@@ -31,26 +31,26 @@ func main() {
 	publicIndex := readCorpus("English public API index", filepath.Join(docsRoot, "docs/reference/public-api-index.md"))
 	chinesePublicIndex := readCorpus("Chinese public API index", filepath.Join(docsRoot, "i18n/zh-Hans/docusaurus-plugin-content-docs/current/reference/public-api-index.md"))
 
-	httpxDir := filepath.Join(sourceRoot, "httpx")
+	fiberxDir := filepath.Join(sourceRoot, "fiberx")
 	expectedFuncs := []string{"GetIP", "IsJSON", "IsMultipart"}
 
 	var failures []string
-	exported := exportedPackageSurface(httpxDir)
-	failures = append(failures, compareNames("httpx func", exported.funcs, expectedFuncs)...)
+	exported := exportedPackageSurface(fiberxDir)
+	failures = append(failures, compareNames("fiberx func", exported.funcs, expectedFuncs)...)
 	if len(exported.consts) > 0 {
-		failures = append(failures, "httpx package should not expose consts, found: "+strings.Join(exported.consts, ", "))
+		failures = append(failures, "fiberx package should not expose consts, found: "+strings.Join(exported.consts, ", "))
 	}
 	if len(exported.types) > 0 {
-		failures = append(failures, "httpx package should not expose types, found: "+strings.Join(exported.types, ", "))
+		failures = append(failures, "fiberx package should not expose types, found: "+strings.Join(exported.types, ", "))
 	}
 	if len(exported.vars) > 0 {
-		failures = append(failures, "httpx package should not expose vars, found: "+strings.Join(exported.vars, ", "))
+		failures = append(failures, "fiberx package should not expose vars, found: "+strings.Join(exported.vars, ", "))
 	}
 	if len(exported.methods) > 0 {
-		failures = append(failures, "httpx package should not expose methods, found: "+strings.Join(exported.methods, ", "))
+		failures = append(failures, "fiberx package should not expose methods, found: "+strings.Join(exported.methods, ", "))
 	}
 	if len(exported.fields) > 0 {
-		failures = append(failures, "httpx package should not expose fields, found: "+strings.Join(exported.fields, ", "))
+		failures = append(failures, "fiberx package should not expose fields, found: "+strings.Join(exported.fields, ", "))
 	}
 
 	for _, doc := range []corpus{publicIndex, chinesePublicIndex} {
@@ -88,7 +88,7 @@ func main() {
 		terms []string
 	}{
 		{
-			path: "httpx/content_type.go",
+			path: "fiberx/content_type.go",
 			terms: []string{
 				"func IsJSON(ctx fiber.Ctx) bool",
 				"return ctx.Is(\"json\")",
@@ -97,7 +97,7 @@ func main() {
 			},
 		},
 		{
-			path: "httpx/content_type_test.go",
+			path: "fiberx/content_type_test.go",
 			terms: []string{
 				"ApplicationJson",
 				"ApplicationJsonWithCharset",
@@ -108,7 +108,7 @@ func main() {
 			},
 		},
 		{
-			path: "httpx/ip.go",
+			path: "fiberx/ip.go",
 			terms: []string{
 				"func GetIP(ctx fiber.Ctx) string",
 				"return ctx.IP()",
@@ -117,7 +117,7 @@ func main() {
 			},
 		},
 		{
-			path: "httpx/ip_test.go",
+			path: "fiberx/ip_test.go",
 			terms: []string{
 				"IgnoresUntrustedXForwardedFor",
 				"DirectIPWhenNoHeader",
@@ -129,7 +129,7 @@ func main() {
 		{
 			path: "internal/api/middleware/auth.go",
 			terms: []string{
-				"contextx.SetRequestIP(ctx.Context(), httpx.GetIP(ctx))",
+				"contextx.SetRequestIP(ctx.Context(), fiberx.GetIP(ctx))",
 			},
 		},
 	}
@@ -142,10 +142,10 @@ func main() {
 
 	sort.Strings(failures)
 	if len(failures) > 0 {
-		panic(fmt.Errorf("httpx contract verification failed:\n%s", strings.Join(failures, "\n")))
+		panic(fmt.Errorf("fiberx contract verification failed:\n%s", strings.Join(failures, "\n")))
 	}
 
-	fmt.Printf("HTTPX contract docs verified: %d public symbols, %d public methods, %d public fields, %d source files, 2 doc mirrors\n",
+	fmt.Printf("Fiberx contract docs verified: %d public funcs, %d public methods, %d public fields, %d source files, 2 doc mirrors\n",
 		len(expectedFuncs), len(exported.methods), len(exported.fields), len(sourceChecks))
 }
 
@@ -165,7 +165,7 @@ func exportedPackageSurface(dir string) packageSurface {
 		return !info.IsDir() && strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
 	}, 0)
 	if err != nil {
-		panic(fmt.Errorf("failed to parse httpx package: %w", err))
+		panic(fmt.Errorf("failed to parse fiberx package: %w", err))
 	}
 
 	consts := make(map[string]bool)
@@ -247,15 +247,15 @@ func exportedPackageSurface(dir string) packageSurface {
 
 func publicDocSurfaceTerms() []string {
 	return []string{
-		"`IsJSON`", "`httpx.IsJSON(ctx fiber.Ctx) bool`",
-		"`IsMultipart`", "`httpx.IsMultipart(ctx fiber.Ctx) bool`",
-		"`GetIP`", "`httpx.GetIP(ctx fiber.Ctx) string`",
+		"`IsJSON`", "`fiberx.IsJSON(ctx fiber.Ctx) bool`",
+		"`IsMultipart`", "`fiberx.IsMultipart(ctx fiber.Ctx) bool`",
+		"`GetIP`", "`fiberx.GetIP(ctx fiber.Ctx) string`",
 	}
 }
 
 func publicIndexTerms() []string {
 	return []string{
-		"## github.com/coldsmirk/vef-framework-go/httpx",
+		"## github.com/coldsmirk/vef-framework-go/fiberx",
 		"FUNC GetIP : func(ctx github.com/gofiber/fiber/v3.Ctx) string",
 		"FUNC IsJSON : func(ctx github.com/gofiber/fiber/v3.Ctx) bool",
 		"FUNC IsMultipart : func(ctx github.com/gofiber/fiber/v3.Ctx) bool",
@@ -263,14 +263,17 @@ func publicIndexTerms() []string {
 }
 
 func runPackageTests(sourceRoot string) []string {
-	cmd := exec.Command("go", "test", "./httpx")
-	cmd.Dir = sourceRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return []string{fmt.Sprintf("go test ./httpx failed: %v\n%s", err, strings.TrimSpace(string(output)))}
+	var failures []string
+	for _, pkg := range []string{"./fiberx", "./httpx"} {
+		cmd := exec.Command("go", "test", pkg)
+		cmd.Dir = sourceRoot
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("go test %s failed: %v\n%s", pkg, err, strings.TrimSpace(string(output))))
+		}
 	}
 
-	return nil
+	return failures
 }
 
 func receiverBaseName(expr ast.Expr) string {

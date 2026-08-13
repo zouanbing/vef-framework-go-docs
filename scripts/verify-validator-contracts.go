@@ -26,8 +26,8 @@ func main() {
 	sourceRoot := cleanAbs(*sourceDir)
 	docsRoot := cleanAbs(*outDir)
 
-	englishDocs := readCorpus("English validation docs", filepath.Join(docsRoot, "docs/data-access/validation.md"))
-	chineseDocs := readCorpus("Chinese validation docs", filepath.Join(docsRoot, "i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/validation.md"))
+	englishDocs := readCorpus("English validation docs", filepath.Join(docsRoot, "docs/building-apis/validation.md"))
+	chineseDocs := readCorpus("Chinese validation docs", filepath.Join(docsRoot, "i18n/zh-Hans/docusaurus-plugin-content-docs/current/building-apis/validation.md"))
 	publicIndex := readCorpus("English public API index", filepath.Join(docsRoot, "docs/reference/public-api-index.md"))
 	chinesePublicIndex := readCorpus("Chinese public API index", filepath.Join(docsRoot, "i18n/zh-Hans/docusaurus-plugin-content-docs/current/reference/public-api-index.md"))
 

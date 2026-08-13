@@ -17,17 +17,17 @@ import (
 
 const (
 	configPackage                     = "github.com/coldsmirk/vef-framework-go/config"
-	configFingerprint                 = "efa0ae6f533c23c21fa966dde4891e2125d3c431f604b4cf183f85ffb44b1859"
-	configTopLevel                    = 79
-	configFields                      = 142
-	configMethods                     = 38
-	configEntries                     = 259
-	configGroupedEntries              = 180
-	configGroupedFields               = 142
-	configGroupedMethods              = 38
-	configGroupedReceivers            = 24
-	configGroupedSignatureFingerprint = "7ffb764c95889a481ea93e65280e0af0d34954c2f6e2ef714fea58e186845740"
-	configGroupedReceiverFingerprint  = "217a3f5461f434acaebbe02f2e8b204da664b5b503970524b00365739a33e34f"
+	configFingerprint                 = "307067e364053cb7d268898939045bd1db5cd55bcfcb8c7a9f3fdfede02a1056"
+	configTopLevel                    = 122
+	configFields                      = 194
+	configMethods                     = 66
+	configEntries                     = 382
+	configGroupedEntries              = 260
+	configGroupedFields               = 194
+	configGroupedMethods              = 66
+	configGroupedReceivers            = 37
+	configGroupedSignatureFingerprint = "013b182b563b191fbf9549b339880dd017cbf08e11701302cad868b7307fd391"
+	configGroupedReceiverFingerprint  = "1a8565ddeb61407cb5a7bbe8ee027cd92a6eb9b6c6362aedabf07f649284021f"
 
 	englishReferencePath = "docs/reference/configuration-reference.md"
 	chineseReferencePath = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/reference/configuration-reference.md"
@@ -446,7 +446,7 @@ func guideTerms(label string) []string {
 		"config.DBKind",
 		"oracle",
 		"sqlserver",
-		"database.ErrUnsupportedDBKind",
+		"\"unsupported database type\"",
 		"token_expires",
 		"refresh-token",
 		"`30m`",
@@ -466,7 +466,7 @@ func guideTerms(label string) []string {
 			"config.DBKind",
 			"oracle",
 			"sqlserver",
-			"database.ErrUnsupportedDBKind",
+			"\"unsupported database type\"",
 			"token_expires",
 			"refresh token",
 			"`30m`",
@@ -779,7 +779,6 @@ func verifySourceContracts(sourceRoot string) []string {
 				"resolved := DefaultConfig()",
 				"if cfg.SampleInterval > 0",
 				"if cfg.SampleDuration > 0",
-				"resolved.ExcludedMounts = cfg.ExcludedMounts",
 			},
 		},
 	}

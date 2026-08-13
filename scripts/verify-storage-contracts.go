@@ -18,18 +18,18 @@ import (
 const (
 	storagePackage = "github.com/coldsmirk/vef-framework-go/storage"
 
-	storageFingerprint = "38d5a444291850b9a3b564e6e885c9e3c9bb516237d850a448d1b8d67ad53faf"
-	storageTopLevel    = 101
-	storageFields      = 50
-	storageMethods     = 31
-	storageEntries     = 182
+	storageFingerprint = "81535eb9f173bff9493cf3d2eb5b6b8ec84025a9b88a825d091504007648d2ca"
+	storageTopLevel    = 109
+	storageFields      = 62
+	storageMethods     = 33
+	storageEntries     = 204
 
-	storageGroupedEntries              = 81
-	storageGroupedFields               = 50
-	storageGroupedMethods              = 31
-	storageGroupedReceivers            = 29
-	storageGroupedSignatureFingerprint = "d1a8f855b01c098ff7f221f5548abbe6df79a7b53aaf7536d4845467dad2316b"
-	storageGroupedReceiverFingerprint  = "1a12dd3b3db4ae47817d0c6435678a7b6060d44f6cd9756adbfe3b5543d13c8d"
+	storageGroupedEntries              = 95
+	storageGroupedFields               = 62
+	storageGroupedMethods              = 33
+	storageGroupedReceivers            = 31
+	storageGroupedSignatureFingerprint = "020ca56f1da10f9362bd52adae54fd0689ebe68306c27c42378e7e03a2bf5789"
+	storageGroupedReceiverFingerprint  = "2480f136a6c12014bf44851f0e12976007ae42a3fd621645367dbd7008f115d3"
 
 	englishStoragePath    = "docs/infrastructure/storage.md"
 	chineseStoragePath    = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/infrastructure/storage.md"
@@ -754,6 +754,7 @@ func verifyRuntimeActions(runtime runtimeLedger, docs []corpus) []string {
 	wantActions := []string{
 		"abort_upload",
 		"complete_upload",
+		"file/resolve",
 		"init_upload",
 		"list_parts",
 		"upload_part",

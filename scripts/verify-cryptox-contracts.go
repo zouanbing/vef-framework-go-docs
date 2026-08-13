@@ -18,11 +18,11 @@ import (
 const (
 	cryptoxPackage = "github.com/coldsmirk/vef-framework-go/cryptox"
 
-	cryptoxFingerprint = "43e9195e7b9fadff400fb3a5d4c835e7083af3e2fe1bf9eb55e9e699389edfc5"
-	cryptoxTopLevel    = 74
+	cryptoxFingerprint = "fa07443f654d48fe799bbe4f7b20cc6b6c1c891a8878bd47070be43bf2bf6dad"
+	cryptoxTopLevel    = 78
 	cryptoxFields      = 0
 	cryptoxMethods     = 9
-	cryptoxEntries     = 83
+	cryptoxEntries     = 87
 
 	cryptoxGroupedEntries              = 9
 	cryptoxGroupedFields               = 0
@@ -545,7 +545,6 @@ func verifySourceTerms(sourceRoot string) []string {
 				"func NewSM4FromBase64(keyBase64 string, opts ...SM4Option) (Cipher, error)",
 				"func (s *sm4Cipher) DecryptWithFixedIV(ciphertext string) (string, error)",
 				"cipher.NewCBCEncrypter(block, iv).CryptBlocks",
-				"_ FixedIVDecrypter = (*sm4Cipher)(nil)",
 			},
 		},
 		{

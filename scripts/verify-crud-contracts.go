@@ -351,7 +351,7 @@ func verifyCoverage(
 	}
 	for _, entry := range entries {
 		if !sameSet(entry.Coverage, expected) {
-			failures = append(failures, fmt.Sprintf("audit entry %s coverage mismatch: got %v want %v", entry.ID, entry.Coverage))
+			failures = append(failures, fmt.Sprintf("audit entry %s coverage mismatch: got %v want %v", entry.ID, entry.Coverage, expected))
 		}
 	}
 
@@ -645,7 +645,7 @@ func verifySourceContracts(sourceRoot string) []string {
 			terms: []string{
 				"File *multipart.FileHeader `json:\"file\"`",
 				"Format TabularFormat `json:\"format\"`",
-				"if httpx.IsJSON(ctx)",
+				"if fiberx.IsJSON(ctx)",
 				"return ErrImportRequiresMultipart",
 				"return ErrImportRequiresFile",
 				"return ErrUnsupportedImportFormat",
@@ -1080,7 +1080,6 @@ func contains(values []string, want string) bool {
 
 	return false
 }
-
 
 func readCorpus(label, path string) corpus {
 	return corpus{label: label, content: readFile(path)}

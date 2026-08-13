@@ -28,7 +28,7 @@ const (
 	localesFieldCount    = 0
 	localesMethodCount   = 0
 	localesEntryCount    = 1
-	localeMessageCount   = 195
+	localeMessageCount   = 250
 )
 
 type corpus struct {
@@ -246,12 +246,12 @@ func verifySourceContracts(sourceRoot string) []string {
 		terms []string
 	}{
 		{
-				path: "config/env.go",
-				terms: []string{
-					"EnvPrefix       = \"VEF\"",
-					"EnvI18NLanguage = EnvPrefix + \"_I18N_LANGUAGE\"",
-				},
+			path: "config/env.go",
+			terms: []string{
+				"EnvPrefix       = \"VEF\"",
+				"EnvI18NLanguage = EnvPrefix + \"_I18N_LANGUAGE\"",
 			},
+		},
 		{
 			path: "i18n/i18n.go",
 			terms: []string{

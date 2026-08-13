@@ -18,17 +18,17 @@ import (
 const (
 	timexPackage = "github.com/coldsmirk/vef-framework-go/timex"
 
-	timexFingerprint = "760ac8fb520f880a74c370205f924a149e2450a97cbb2c894425f2497d6a96e4"
+	timexFingerprint = "acc8a71b02fec82e625770e5f7e7283e443b9e0a5900466cd054d9d0eb202577"
 	timexTopLevel    = 20
 	timexFields      = 0
-	timexMethods     = 136
-	timexEntries     = 156
+	timexMethods     = 137
+	timexEntries     = 157
 
-	timexGroupedEntries              = 136
-	timexGroupedMethods              = 136
+	timexGroupedEntries              = 137
+	timexGroupedMethods              = 137
 	timexGroupedReceivers            = 3
-	timexGroupedSignatureFingerprint = "019c36b4c473fee9e3141aac255efd34b802467315ce3f88636bcaf3f2ff0c7f"
-	timexGroupedReceiverFingerprint  = "5912e53f6b7f0fccca6f9b02332f57c3063ebe523d3f5a3f33717a734a9d2d2d"
+	timexGroupedSignatureFingerprint = "737be43ee205846d1f8083c126c5c85dacc9f60c5cfeedbc8788ac50066a94ff"
+	timexGroupedReceiverFingerprint  = "8e8810e2e71d2008e2c616252f3562f000dab40d4ef2835b4ca60cf8d9faeac4"
 
 	englishTimexPath = "docs/utilities/timex.md"
 	chineseTimexPath = "i18n/zh-Hans/docusaurus-plugin-content-docs/current/utilities/timex.md"
@@ -153,7 +153,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Timex contract docs verified: 156 public entries, 136 grouped methods, Date/Time/DateTime wire contracts")
+	fmt.Println("Timex contract docs verified: 157 public entries, 137 grouped methods, Date/Time/DateTime wire contracts")
 }
 
 func verifySurfaceEntry(label string, entry manifestEntry) []string {

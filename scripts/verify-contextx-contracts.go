@@ -186,7 +186,7 @@ func main() {
 		{
 			path: "internal/api/middleware/auth.go",
 			terms: []string{
-				"contextx.SetRequestIP(ctx.Context(), httpx.GetIP(ctx))",
+				"contextx.SetRequestIP(ctx.Context(), fiberx.GetIP(ctx))",
 				"contextx.SetRequestMethod(reqCtx, ctx.Method())",
 				"contextx.SetRequestPath(reqCtx, ctx.Path())",
 				"contextx.SetPrincipal(ctx, principal)",

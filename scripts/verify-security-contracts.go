@@ -16,12 +16,12 @@ const (
 	auditLedgerPath = "scripts/api-audit-ledger.json"
 	securityPackage = "github.com/coldsmirk/vef-framework-go/security"
 
-	securityGroupedEntryCount           = 239
-	securityGroupedFieldCount           = 103
-	securityGroupedMethodCount          = 136
-	securityGroupedReceiverCount        = 86
-	securityGroupedSignatureFingerprint = "97f7d1817a8d56eb33e9bdf7a49487c54a2becdf9c0e9446e82b3b2edf3d5a06"
-	securityGroupedReceiverFingerprint  = "33dbb44af3fe43549d25fd3f4bc6e93eaa19250257dc32c8cc0b9d96b803c8a9"
+	securityGroupedEntryCount           = 247
+	securityGroupedFieldCount           = 106
+	securityGroupedMethodCount          = 141
+	securityGroupedReceiverCount        = 91
+	securityGroupedSignatureFingerprint = "b5b6b663eec48fc9e152baead5a110ad68cab88b9758a31a756be43378266705"
+	securityGroupedReceiverFingerprint  = "e6f59d982d795addce669ba8051c61ec71278e8cb9a8a6701877ab5affea691d"
 )
 
 type corpus struct {
@@ -57,8 +57,14 @@ func main() {
 	sourceRoot := cleanAbs(*sourceDir)
 	docsRoot := cleanAbs(*outDir)
 	authDocs := []corpus{
-		readCorpus("English authentication docs", filepath.Join(docsRoot, "docs/security/authentication.md")),
-		readCorpus("Chinese authentication docs", filepath.Join(docsRoot, "i18n/zh-Hans/docusaurus-plugin-content-docs/current/security/authentication.md")),
+		readCorpora("English authentication docs", docsRoot, []string{
+			"docs/security/authentication.md",
+			"docs/security/authentication-reference.md",
+		}),
+		readCorpora("Chinese authentication docs", docsRoot, []string{
+			"i18n/zh-Hans/docusaurus-plugin-content-docs/current/security/authentication.md",
+			"i18n/zh-Hans/docusaurus-plugin-content-docs/current/security/authentication-reference.md",
+		}),
 	}
 	authzDocs := []corpus{
 		readCorpus("English authorization docs", filepath.Join(docsRoot, "docs/security/authorization.md")),
@@ -81,7 +87,7 @@ func main() {
 		panic(fmt.Errorf("security contract verification failed:\n%s", strings.Join(failures, "\n")))
 	}
 
-	fmt.Printf("Security contract docs verified: 239 grouped field/method entries, %d auth docs, %d authorization docs, %d data-permission docs\n",
+	fmt.Printf("Security contract docs verified: 247 grouped field/method entries, %d auth docs, %d authorization docs, %d data-permission docs\n",
 		len(authDocs), len(authzDocs), len(dataPermDocs))
 }
 
@@ -203,8 +209,8 @@ func authChecks() []check {
 				"`UserInfoLoader.LoadUserInfo(...)`",
 			},
 			englishDocTerms: []string{
-				"`logout` returns an ok result immediately",
-				"does not revoke or blacklist a\nserver-side token",
+				"`logout` always returns an ok result",
+				"there is no server-side session to revoke",
 				"arbitrary `params`, forwarded to `UserInfoLoader.LoadUserInfo(...)`",
 			},
 			chineseDocTerms: []string{
@@ -217,7 +223,7 @@ func authChecks() []check {
 			sourcePath: "security/security.go",
 			sourceTerms: []string{
 				"`json:\"accessToken\"`",
-				"`json:\"refreshToken\"`",
+				"`json:\"refreshToken,omitempty\"`",
 				"`json:\"type\"`",
 				"`json:\"principal\"`",
 				"`json:\"credentials\"`",
@@ -834,6 +840,15 @@ func readCorpus(label, path string) corpus {
 	}
 
 	return corpus{label: label, content: string(content)}
+}
+
+func readCorpora(label, root string, paths []string) corpus {
+	parts := make([]string, 0, len(paths))
+	for _, path := range paths {
+		parts = append(parts, readCorpus(label, filepath.Join(root, path)).content)
+	}
+
+	return corpus{label: label, content: strings.Join(parts, "\n")}
 }
 
 func missingTerms(c corpus, terms []string) []string {

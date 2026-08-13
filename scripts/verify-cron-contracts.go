@@ -34,31 +34,65 @@ func main() {
 	cronDir := filepath.Join(sourceRoot, "cron")
 	publicSymbols := exportedTopLevelNames(cronDir)
 	expectedSymbols := []string{
-		"CronJobDefinition", "DurationJobDefinition", "DurationRandomJobDefinition",
-		"ErrJobNameRequired", "ErrJobTaskHandlerMustFunc", "ErrJobTaskHandlerRequired",
-		"Job", "JobDefinition", "JobDescriptorOption", "NewCronJob",
-		"NewDurationJob", "NewDurationRandomJob", "NewOneTimeJob",
-		"NewScheduler", "OneTimeJobDefinition", "Scheduler", "WithConcurrent",
-		"WithContext", "WithLimitedRuns", "WithName", "WithStartAt",
-		"WithStartImmediately", "WithStopAt", "WithTags", "WithTask",
+		"ConcurrencyAllow", "ConcurrencyForbid", "ConcurrencyPolicy",
+		"CronJobDefinition", "DefaultScheduleProvider", "DefaultTimezone",
+		"DurationJobDefinition", "DurationRandomJobDefinition",
+		"ErrCodeJobNotRegistered", "ErrCodeScheduleDisabled", "ErrCodeScheduleExists",
+		"ErrCodeScheduleInvalid", "ErrCodeScheduleNotFound", "ErrCodeStoreDisabled",
+		"ErrCodeTriggerInvalid", "ErrJobNameRequired", "ErrJobNotRegistered",
+		"ErrJobTaskHandlerMustFunc", "ErrJobTaskHandlerRequired",
+		"ErrScheduleDisabled", "ErrScheduleExists", "ErrScheduleInvalid",
+		"ErrScheduleNotFound", "ErrStoreDisabled", "ErrTriggerExprInvalid",
+		"ErrTriggerExprRequired", "ErrTriggerFieldsConflict",
+		"ErrTriggerFireTimeRequired", "ErrTriggerIntervalTooLong",
+		"ErrTriggerIntervalTooShort", "ErrTriggerInvalid", "ErrTriggerKindUnknown",
+		"ErrTriggerTimezoneInvalid", "EventTypeRunAbandoned", "EventTypeRunFailed",
+		"Every", "Execution", "Expr", "Job", "JobDefinition", "JobDescriptorOption",
+		"JobHandler", "JobHandlerOption", "MaxDurationMilliseconds", "MinInterval",
+		"MisfireFireNow", "MisfirePolicy", "MisfireSkip",
+		"NewCronJob", "NewDurationJob", "NewDurationRandomJob",
+		"NewJobHandler", "NewOneTimeJob", "NewRunAbandonedEvent",
+		"NewRunFailedEvent", "NewScheduler", "NewTypedJobHandler",
+		"Once", "OneTimeJobDefinition", "Run", "RunAbandoned", "RunAbandonedEvent",
+		"RunCanceled", "RunFailed", "RunFailedEvent", "RunFilter", "RunMissed",
+		"RunRunning", "RunSkipped", "RunStatus", "RunSucceeded",
+		"Schedule", "ScheduleFilter", "ScheduleManager", "ScheduleSpec",
+		"Scheduler", "TriggerCron", "TriggerInterval", "TriggerKind",
+		"TriggerOnce", "TriggerSpec",
+		"WithConcurrent", "WithContext", "WithDefaultSchedule", "WithLimitedRuns",
+		"WithName", "WithStartAt", "WithStartImmediately", "WithStopAt",
+		"WithTags", "WithTask",
 	}
 
 	publicMethods := exportedMethodNames(cronDir)
 	expectedMethods := []string{
+		"DefaultScheduleProvider.DefaultSchedule",
+		"Execution.BindParams",
 		"Job.ID", "Job.LastRun", "Job.Name", "Job.NextRun", "Job.NextRuns",
-		"Job.RunNow", "Job.Tags", "Scheduler.Jobs", "Scheduler.JobsWaitingInQueue",
+		"Job.RunNow", "Job.Tags",
+		"JobHandler.Execute", "JobHandler.Name",
+		"RunAbandonedEvent.EventType",
+		"RunFailedEvent.EventType",
+		"RunStatus.IsTerminal",
+		"Schedule.Timeout", "Schedule.Trigger",
+		"ScheduleManager.Create", "ScheduleManager.Delete",
+		"ScheduleManager.Get", "ScheduleManager.List",
+		"ScheduleManager.ListRuns", "ScheduleManager.Pause",
+		"ScheduleManager.Resume", "ScheduleManager.TriggerNow",
+		"ScheduleManager.Update",
+		"Scheduler.Jobs", "Scheduler.JobsWaitingInQueue",
 		"Scheduler.NewJob", "Scheduler.RemoveByTags", "Scheduler.RemoveJob",
 		"Scheduler.Start", "Scheduler.StopJobs", "Scheduler.Update",
+		"TriggerSpec.Next", "TriggerSpec.Occurrences", "TriggerSpec.Validate",
 	}
 
 	var failures []string
 	failures = append(failures, compareNames("cron symbol", publicSymbols, expectedSymbols)...)
 	failures = append(failures, compareNames("cron method", publicMethods, expectedMethods)...)
 
-	exportedFields := exportedFieldNames(cronDir)
-	if len(exportedFields) > 0 {
-		failures = append(failures, "cron package should not expose struct fields, found: "+strings.Join(exportedFields, ", "))
-	}
+	// The durable schedule store legitimately exposes structs with exported
+	// fields (Schedule, Run, ScheduleSpec, TriggerSpec, Execution, events,
+	// filters). Do not assert reverse — verifying the name list suffices.
 
 	for _, doc := range []corpus{publicIndex, chinesePublicIndex} {
 		for _, term := range publicIndexTerms() {
@@ -181,8 +215,9 @@ func main() {
 			path: "internal/cron/module.go",
 			terms: []string{
 				"fx.Module(", "\"vef:cron\"",
-				"fx.Provide(newScheduler, fx.Private)",
+				"fx.Provide(newScheduler)",
 				"fx.Provide(cron.NewScheduler)",
+				"store.Module",
 			},
 		},
 		{
@@ -207,7 +242,7 @@ func main() {
 	}
 
 	failures = append(failures, missingTerms(englishDocs, []string{
-		"no exported fields", "caller-provided `gocron.Scheduler`",
+		"caller-provided `gocron.Scheduler`",
 		"caller must pass a usable scheduler", "with seconds",
 		"standard 5-field form", "singleton wait mode",
 		"takes precedence over `WithStartImmediately`",
@@ -222,7 +257,7 @@ func main() {
 		"app stop shuts the scheduler down",
 	})...)
 	failures = append(failures, missingTerms(chineseDocs, []string{
-		"没有 exported fields", "调用方提供的 `gocron.Scheduler`",
+		"调用方提供的 `gocron.Scheduler`",
 		"调用方必须传入可用 scheduler", "带 seconds 字段",
 		"标准 5-field 格式", "singleton wait mode",
 		"优先级高于 `WithStartImmediately`",

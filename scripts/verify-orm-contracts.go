@@ -17,15 +17,15 @@ import (
 const (
 	ormPackage = "github.com/coldsmirk/vef-framework-go/orm"
 
-	ormGroupedEntryCount           = 1350
-	ormGroupedSignatureFingerprint = "dee79f633409b3a6abac018fa3451a6a25a6d4ba2948424e63c28e7a96bfd240"
-	ormGroupedReceiverFingerprint  = "c8920541a1b519fb01853860e9499c2ee6e21b65c5221d473732a2e1f2a990b9"
+	ormGroupedEntryCount           = 1352
+	ormGroupedSignatureFingerprint = "0007c9f2aeeb2c462f9f9ec48c3cf0af6de1cc3614b66020aa0925501c200e96"
+	ormGroupedReceiverFingerprint  = "874cde2d4e0726680812365c2050f8258681d2cac60ba9fcbdf974cbb74b3f58"
 
 	ormBunGroupedEntryCount           = 237
 	ormBunGroupedSignatureFingerprint = "15339acc44fcf86555dace5fc0f63177864ee437c1666100d0048e1da9a2d22a"
 
-	ormVEFOwnedGroupedEntryCount           = 1113
-	ormVEFOwnedGroupedSignatureFingerprint = "0f0a7b25408d1d1730fc57b54505ede3fe43770fd1b38632d3491a0406a8d3e3"
+	ormVEFOwnedGroupedEntryCount           = 1115
+	ormVEFOwnedGroupedSignatureFingerprint = "a20609b911785f56fa4eae16d869b9bf7f04ed03a51b27977b27b603ea1bd0ed"
 )
 
 type corpus struct {
@@ -57,8 +57,20 @@ func main() {
 	publicFacade := readCorpus("public ORM facade", filepath.Join(sourceRoot, "orm/orm.go"))
 	queryTrait := readCorpus("internal ORM query traits", filepath.Join(sourceRoot, "internal/orm/query_trait.go"))
 	goMod := readCorpus("source go.mod", filepath.Join(sourceRoot, "go.mod"))
-	englishDocs := readCorpus("English ORM docs", filepath.Join(docsRoot, "docs/data-access/orm-builder.md"))
-	chineseDocs := readCorpus("Chinese ORM docs", filepath.Join(docsRoot, "i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/orm-builder.md"))
+	englishDocs := readCorpora("English ORM docs", docsRoot, []string{
+		"docs/data-access/orm-querying.md",
+		"docs/data-access/orm-mutations.md",
+		"docs/data-access/orm-expressions.md",
+		"docs/data-access/orm-ddl.md",
+		"docs/data-access/query-builder.md",
+	})
+	chineseDocs := readCorpora("Chinese ORM docs", docsRoot, []string{
+		"i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/orm-querying.md",
+		"i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/orm-mutations.md",
+		"i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/orm-expressions.md",
+		"i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/orm-ddl.md",
+		"i18n/zh-Hans/docusaurus-plugin-content-docs/current/data-access/query-builder.md",
+	})
 	docs := []corpus{englishDocs, chineseDocs}
 
 	var failures []string
@@ -161,7 +173,7 @@ func main() {
 		panic(fmt.Errorf("ORM contract verification failed:\n%s", strings.Join(failures, "\n")))
 	}
 
-	fmt.Println("ORM contract docs verified: public facade aliases, VEF/Bun execution boundary, 1,350 grouped method entries, go test ./orm")
+	fmt.Println("ORM contract docs verified: public facade aliases, VEF/Bun execution boundary, 1,352 grouped method entries, go test ./orm")
 }
 
 func readCorpus(label, path string) corpus {
@@ -171,6 +183,16 @@ func readCorpus(label, path string) corpus {
 	}
 
 	return corpus{label: label, content: string(content)}
+}
+
+func readCorpora(label, root string, paths []string) corpus {
+	parts := make([]string, 0, len(paths))
+	for _, path := range paths {
+		part := readCorpus(label, filepath.Join(root, path))
+		parts = append(parts, part.content)
+	}
+
+	return corpus{label: label, content: strings.Join(parts, "\n")}
 }
 
 func loadAuditLedger(path string) auditLedger {

@@ -64,6 +64,8 @@ func main() {
 			"ErrCollectionSetUnsupportedTarget",
 			"ErrInvalidFromMapType",
 			"ErrInvalidToMapValue",
+			"ErrJSONNumberNotInteger",
+			"ErrJSONNumberOverflow",
 		},
 	}
 
@@ -96,7 +98,7 @@ func main() {
 		"`json.RawMessage` — marshals the source value to JSON bytes",
 		"`*multipart.FileHeader` — picks the only entry when the source is `[]*multipart.FileHeader` with length 1",
 		"`collections.Set` / `SortedSet` / `ConcurrentSet` / `ConcurrentSortedSet` — turns a slice or array into the corresponding set type",
-		"Collection-set decoding is registered for `string`, signed integers, unsigned\nintegers, `float32`, and `float64`",
+		"Collection-set decoding is registered for `string`, all signed and unsigned\ninteger widths, and `float32`/`float64`",
 		"It rejects nil elements, string/numeric\nfamily mismatches, numeric overflow, fractional floats targeting integer sets,\nNaN or infinity targeting integer sets, and negative values targeting unsigned\nsets",
 		"`WithDecodeHook(myHook)` replaces the default composed hook",
 		"compose your hook with `mapx.DecoderHook` before passing it to\n`WithDecodeHook`",
@@ -114,7 +116,7 @@ func main() {
 		"`json.RawMessage` —— 将源值 marshal 成 JSON bytes",
 		"`*multipart.FileHeader` —— 源是长度为 1 的 `[]*multipart.FileHeader` 时取唯一一项",
 		"`collections.Set` / `SortedSet` / `ConcurrentSet` / `ConcurrentSortedSet` —— 把 slice 或 array 转为对应的集合类型",
-		"collection-set 解码为 `string`、有符号整数、无符号整数、`float32` 和\n`float64` 注册",
+		"collection-set 解码为 `string`、全部有符号/无符号整数宽度以及\n`float32`/`float64` 注册",
 		"它会拒绝 nil element、string/numeric family mismatch、\nnumeric overflow、fractional float 转 integer set、NaN 或 infinity 转\ninteger set，以及负数转 unsigned set",
 		"`WithDecodeHook(myHook)` 会替换默认 composed hook",
 		"自定义 hook 和 `mapx.DecoderHook` compose，再传给 `WithDecodeHook`",
@@ -434,6 +436,8 @@ func publicDocSurfaceTerms() []string {
 		"`mapx.ErrCollectionSetNotFinite`",
 		"`mapx.ErrCollectionSetNegative`",
 		"`mapx.ErrCollectionSetUnsupportedTarget`",
+		"`mapx.ErrJSONNumberNotInteger`",
+		"`mapx.ErrJSONNumberOverflow`",
 	}
 }
 
@@ -451,6 +455,8 @@ func publicIndexTerms() []string {
 		"VAR ErrCollectionSetUnsupportedTarget : error",
 		"VAR ErrInvalidFromMapType : error",
 		"VAR ErrInvalidToMapValue : error",
+		"VAR ErrJSONNumberNotInteger : error",
+		"VAR ErrJSONNumberOverflow : error",
 		"FUNC FromMap : func[T any](value map[string]any, options ...github.com/coldsmirk/vef-framework-go/mapx.DecoderOption) (*T, error)",
 		"TYPE Metadata : github.com/coldsmirk/vef-framework-go/mapx.Metadata",
 		"FUNC NewDecoder : func(result any, options ...github.com/coldsmirk/vef-framework-go/mapx.DecoderOption) (*github.com/go-viper/mapstructure/v2.Decoder, error)",
