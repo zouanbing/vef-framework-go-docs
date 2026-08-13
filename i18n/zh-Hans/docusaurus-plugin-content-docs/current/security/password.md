@@ -66,7 +66,7 @@ needsUpgrade := encoder.UpgradeEncoding("{sha256}abc123...")
 // → true（因为默认是 bcrypt，不是 sha256）
 ```
 
-`UpgradeEncoding` 遇到有效但非默认的前缀时会直接返回 `true`。默认前缀或无前缀
+`UpgradeEncoding` 遇到任何非默认前缀时都会直接返回 `true`，即使该前缀尚未注册。默认前缀或无前缀
 值会继续委托给默认 encoder 自身的 `UpgradeEncoding` 逻辑，例如 bcrypt cost
 比较。
 
@@ -151,8 +151,8 @@ composite 会在这个 encoded value 前面追加外层 `{algorithm}` 前缀。
 | --- | --- |
 | `ErrInvalidCost` | bcrypt cost 不在 `4..31` 范围内 |
 | `ErrInvalidMemory` | Argon2 memory 参数过小 |
-| `ErrInvalidIterations` | iteration count 小于 `1` |
-| `ErrInvalidParallelism` | Argon2 parallelism 小于 `1` |
+| `ErrInvalidIterations` | Argon2/PBKDF2 iterations 小于 `1`，或 scrypt 的 `N < 2` / `r < 1` |
+| `ErrInvalidParallelism` | Argon2 或 scrypt parallelism 小于 `1` |
 | `ErrInvalidEncoderID` | 已定义但当前未被使用：未知前缀时 `Matches` 直接返回 `false`，`Encode` 失败走 `ErrDefaultEncoderNotFound`，目前没有代码路径返回该哨兵 |
-| `ErrInvalidHashFormat` | 编码后的密码格式不合法 |
+| `ErrInvalidHashFormat` | 编码后的密码格式不合法，或 PBKDF2 配置了不支持的 hash 函数（仅接受 `sha256`/`sha512`） |
 | `ErrDefaultEncoderNotFound` | `CompositeEncoder` 没有注册默认 encoder ID |

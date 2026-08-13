@@ -8,7 +8,7 @@ VEF includes a schema inspection service and a built-in resource for reading dat
 
 The built-in implementation inspects the primary data source only. It supports
 PostgreSQL, MySQL, and SQLite through Atlas. PostgreSQL uses
-`vef.datasource.*.schema` when configured and otherwise defaults to `public`;
+`vef.data_sources.*.schema` when configured and otherwise defaults to `public`;
 MySQL inspects the current `DATABASE()`; SQLite inspects the `main` schema.
 
 ## Module Outputs
@@ -27,9 +27,9 @@ The public schema service exposes:
 
 | Method | Return type | Purpose |
 | --- | --- | --- |
-| `ListTables(ctx)` | `[]schema.Table` | list tables in the current schema or database |
-| `GetTableSchema(ctx, name)` | `*schema.TableSchema` | inspect one table in detail |
-| `ListViews(ctx)` | `[]schema.View` | list views |
+| `ListTables(ctx)` | `([]schema.Table, error)` | list tables in the current schema or database |
+| `GetTableSchema(ctx, name)` | `(*schema.TableSchema, error)` | inspect one table in detail |
+| `ListViews(ctx)` | `([]schema.View, error)` | list views |
 
 ## Built-In Resource
 
@@ -46,9 +46,9 @@ in process memory on each node.
 
 | Action | Access | Rate limit | Input | Output |
 | --- | --- | --- | --- | --- |
-| `list_tables` | Bearer auth | `max 60` | none | `[]schema.Table` |
-| `get_table_schema` | Bearer auth | `max 60` | `GetTableSchemaParams` | `schema.TableSchema` |
-| `list_views` | Bearer auth | `max 60` | none | `[]schema.View` |
+| `list_tables` | Bearer auth | `Max = 60` | none | `[]schema.Table` |
+| `get_table_schema` | Bearer auth | `Max = 60` | `GetTableSchemaParams` | `schema.TableSchema` |
+| `list_views` | Bearer auth | `Max = 60` | none | `[]schema.View` |
 
 Purpose of each action:
 

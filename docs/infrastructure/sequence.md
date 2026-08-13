@@ -22,7 +22,7 @@ The framework wires a `sequence.Generator` for you. It also exposes the concrete
 then call `Generate(ctx, key)`.
 
 The helper `sequence.FormatDate(dt, format)` is public as well. It renders the
-same `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss` tokens used by `Rule.DateFormat`.
+same `yyyy` / `yy` / `MM` / `dd` / `HH` / `mm` / `ss` tokens used by `Rule.DateFormat`.
 
 ## Defining a Rule
 
@@ -104,7 +104,7 @@ cycles, `LastResetAt == nil` triggers a reset on the next reservation.
 | --- | --- |
 | `sequence.OverflowError` *(default)* | Return `sequence.ErrSequenceOverflow` and refuse to generate further numbers until the next reset. |
 | `sequence.OverflowReset` | Reset the counter to `StartValue` and continue. |
-| `sequence.OverflowExtend` | Keep counting past `SeqLength` (the result simply gets more digits). |
+| `sequence.OverflowExtend` | Keep counting past `MaxValue` without erroring or resetting; the rendered number may then exceed the `SeqLength` zero-pad width (more digits). |
 
 `MaxValue` is checked after applying any cycle reset. If a reset boundary moves
 the counter back to `StartValue` but the requested batch still exceeds
@@ -116,11 +116,13 @@ resetting again cannot make the batch fit. Values other than the exported
 
 The current built-in runtime store is in-memory and non-durable: counters and
 registered rules are lost on process restart. It is suitable for tests, dev, and
-single-process deployments. Distributed or durable deployments should provide a
-custom `sequence.Store`.
+single-process deployments. Distributed or durable deployments should swap the
+backing `sequence.Store` — for example, decorate `sequence.Store` with
+`sequence.NewDBStore` or `sequence.NewRedisStore` via `fx.Decorate`/`vef.Decorate`,
+or provide a custom implementation.
 
-`sequence.Store.Reserve(ctx, key, count, now)` is the contract boundary for
-custom stores. Implementations must serialize the read-modify-write path per
+`sequence.Store.Reserve(ctx context.Context, key string, count int, now timex.DateTime)
+(*Rule, int, error)` is the contract boundary for custom stores. Implementations must serialize the read-modify-write path per
 rule key and reserve the whole `count` batch atomically.
 
 ### In-memory
@@ -149,7 +151,9 @@ func SeedSequenceRules(store *sequence.MemoryStore) {
 `sys_sequence_rule` table (`sequence.DBStoreTableName`). `DBStore.Init(ctx)`
 creates the table when it does not exist, and `Reserve(...)` locks the rule row
 for update so each reservation is atomic within the database transaction.
-`sequence.RuleModel` is the ORM model for that table.
+`sequence.RuleModel` is the ORM model for that table. When `DBStore` is the
+active store, the framework calls `Init` at startup automatically, so the
+table is created without manual wiring.
 
 ### Redis
 

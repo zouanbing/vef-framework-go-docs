@@ -43,6 +43,7 @@ Treat that loader as required unless you intentionally replace the default check
 | --- | --- |
 | permissions | `PermissionChecker`, `RolePermissionsLoader`, `CachedRolePermissionsLoader`, `NewCachedRolePermissionsLoader` |
 | cache invalidation | `RolePermissionsChangedEvent`, `PublishRolePermissionsChangedEvent` |
+| data scopes | `DataScope`, `DataPermissionResolver`, `DataPermissionApplier`, `NewAllDataScope`, `NewSelfDataScope`, `Priority*` constants |
 | user info | `UserInfo`, `UserInfoLoader`, `UserMenu`, `UserMenuType`, `Gender` |
 | login audit events | `LoginEvent`, `LoginEventParams`, `NewLoginEvent`, `SubscribeLoginEvent` |
 | auth failures | `ErrPrincipalInvalid(...)`, `ErrCredentialsInvalid(...)`, `ErrUnauthenticated`, `ErrCodePrincipalInvalid`, `ErrCodeCredentialsInvalid`, and access-denied results from permission checks |
@@ -97,7 +98,7 @@ same logical permission into two.
 
 ## What Happens On Failure
 
-If permission checking fails, VEF returns an access-denied response. The framework preserves the structured result shape and maps the failure to the correct authorization error code.
+If permission checking fails, VEF returns an access-denied response. The framework preserves the structured result shape and maps the failure to code `1100` (`result.ErrCodeAccessDenied`, message `access_denied`, HTTP 403).
 
 ## Practical Advice
 

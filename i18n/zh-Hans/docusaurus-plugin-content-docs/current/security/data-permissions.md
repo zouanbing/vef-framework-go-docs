@@ -31,13 +31,13 @@ scope := security.NewSelfDataScope(orm.ColumnCreatedBy)
 
 这意味着在很多场景里，handler 本身根本不需要知道行级权限细节。
 
-但要注意，自动过滤仍然取决于你的应用是否真的提供了可用的数据权限来源。如果默认 RBAC resolver 背后没有有效的 permission loader，那最终也可能拿不到可应用的 scope。
+但要注意，自动过滤仍然取决于你的应用是否真的提供了可用的数据权限来源。如果默认 RBAC resolver 背后没有有效的 permission loader，那最终也可能拿不到可应用的 scope。当操作声明了需要 permission token 时，缺失 resolver 或 resolver 报错会直接以 HTTP 403 拒绝请求；而返回 nil scope（无匹配权限）则仅跳过过滤。
 
 如果你依赖默认的 RBAC 数据权限解析器，那么 `security.RolePermissionsLoader` 基本可以视为真正让行级过滤生效的前提条件。
 
 ## 如何关闭自动数据权限
 
-部分 CRUD builder 暴露了 `DisableDataPerm()`。
+所有查询、更新、删除 CRUD builder（含批量变体）都暴露了 `DisableDataPerm()`。创建操作没有查询可过滤，因此不提供该选项。
 
 只有当你非常清楚为什么不应该自动过滤时才应该使用它。因为一旦关闭，你就要自己保证后续的边界控制仍然正确。
 

@@ -553,12 +553,20 @@ db.NewSelect().Model(&tasks).
 // FOR SHARE
 db.NewSelect().Model(&user).ForShare().Scan(ctx)
 
+// FOR SHARE NOWAIT / SKIP LOCKED
+db.NewSelect().Model(&user).ForShareNoWait().Scan(ctx)
+db.NewSelect().Model(&user).ForShareSkipLocked().Scan(ctx)
+
 // FOR KEY SHARE / FOR NO KEY UPDATE（仅 PostgreSQL）
 db.NewSelect().Model(&user).ForKeyShare().Scan(ctx)
 db.NewSelect().Model(&user).ForNoKeyUpdate().Scan(ctx)
+
+// FOR NO KEY UPDATE NOWAIT / SKIP LOCKED（仅 PostgreSQL）
+db.NewSelect().Model(&user).ForNoKeyUpdateNoWait().Scan(ctx)
+db.NewSelect().Model(&user).ForNoKeyUpdateSkipLocked().Scan(ctx)
 ```
 
-> 方言支持：SQLite 不支持行级锁定——调用会被静默忽略并记录警告。`FOR NO KEY UPDATE` 和 `FOR KEY SHARE` 仅 PostgreSQL 支持；在 MySQL 上会被静默忽略并记录警告。每种方言与锁模式的组合在一个进程内只警告一次，避免锁行循环刷屏日志。
+> 方言支持：SQLite 不支持行级锁定——调用会被静默忽略并记录警告。`FOR NO KEY UPDATE` 和 `FOR KEY SHARE` 仅 PostgreSQL 支持；在 MySQL 上会被静默忽略并记录警告。每个锁模式都有 `NoWait` 和 `SkipLocked` 变体。每种方言与锁模式的组合在一个进程内只警告一次，避免锁行循环刷屏日志。
 
 ## 执行方法
 

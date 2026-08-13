@@ -4,11 +4,11 @@ sidebar_position: 6
 
 # Login Hardening
 
-The `security` package ships five independent, opt-in hardening layers around
-the login endpoint. All of them are wired inside the framework's security
-module, none of them change how a client calls `security/auth.login`, and you can enable any
-subset of them — a fresh application with no extra config gets none of this
-protection.
+The `security` package ships five independent hardening layers around the login
+endpoint. All of them are wired inside the framework's security module and none
+of them change how a client calls `security/auth.login`. Brute-force lockout is
+on by default; the other layers are opt-in and stay dormant until configured or
+backed by an app-provided component.
 
 | Layer | Protects against | Config section | App-owned interface |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ fx.Provide(func() (security.PasswordDecryptor, error) {
 ```
 
 `PasswordDecryptor` is an optional dependency of `NewPasswordAuthenticator`
-(along with `UserLoader` and any transport itself) — leaving it unregistered
+(along with `UserLoader` and `password.Encoder`) — leaving it unregistered
 means the authenticator treats the transmitted credential as plaintext, which
 is the zero-config default.
 

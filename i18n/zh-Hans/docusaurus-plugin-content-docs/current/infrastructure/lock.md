@@ -73,7 +73,7 @@ type Lock interface {
 | API | 契约 |
 | --- | --- |
 | `lock.NewMemoryLocker() lock.Locker` | 创建进程内锁，用于单实例部署与测试 |
-| `lock.NewRedisLocker(client *redis.Client) lock.Locker` | 创建 Redis 锁，用于跨副本互斥 |
+| `lock.NewRedisLocker(client *redis.Client) lock.Locker` | 创建 Redis 锁，用于跨副本互斥；`client` 为 nil 时会 panic |
 
 `Acquire` 会持续重试直到 `WithWait` 窗口耗尽（默认不等待）；`TryAcquire`
 只做一次非阻塞尝试。锁被他人持有时二者都返回 `lock.ErrNotAcquired`，后端
@@ -86,9 +86,9 @@ type Lock interface {
 
 | Option | 默认值 | 含义 |
 | --- | --- | --- |
-| `WithTTL(d)` | `lock.DefaultTTL`（30s） | 租约时长；获取或最近一次续约后经过该时长自动过期，限定崩溃的持有者最多阻塞他人多久 |
+| `WithTTL(d)` | `lock.DefaultTTL`（30s） | 租约时长；获取或最近一次续约后经过该时长自动过期，限定崩溃的持有者最多阻塞他人多久。非正值会回退到 `lock.DefaultTTL` |
 | `WithWait(d)` | 0（不等待） | `Acquire` 放弃并返回 `ErrNotAcquired` 前的重试窗口 |
-| `WithRetryInterval(d)` | `lock.DefaultRetryInterval`（100ms） | 等待型 `Acquire` 的轮询间隔 |
+| `WithRetryInterval(d)` | `lock.DefaultRetryInterval`（100ms） | 等待型 `Acquire` 的轮询间隔。非正值会回退到 `lock.DefaultRetryInterval` |
 | `WithAutoRenew(on)` | 裸 `Acquire` / `TryAcquire` 默认关；`WithLock` 内默认开 | 后台 watchdog 每 TTL/3 续约一次，健康的持有者不会在工作中途过期，崩溃的持有者仍在一个 TTL 内释放锁 |
 
 自动续约要求 TTL 不低于 `lock.MinAutoRenewTTL`（30ms）；更短的租约在获取时
@@ -101,7 +101,7 @@ type Lock interface {
 - 以自动续约获取（除非显式关闭），`fn` 可以安全地运行超过 TTL；
 - 租约一旦丢失立即取消 `fn` 的 context；
 - 之后**总是释放**——即使 `fn` panic——且释放使用一个不受请求取消影响的
-  context；
+  context，但该 context 受 5 秒释放超时限制；
 - 返回 `fn` 与释放的 join error：即便 `fn` 成功，释放报出
   `lock.ErrNotHeld` 时整体仍是错误，因为这段"独占区"已不可信。
 

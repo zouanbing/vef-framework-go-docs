@@ -65,7 +65,7 @@ if err := resp.JSON(&out); err != nil {
 | 选项 | 行为 |
 | --- | --- |
 | `WithBaseURL(url)` | 相对请求 URL 拼接的绝对基址；绝对请求 URL 绕过它 |
-| `WithTimeout(d)` | 约束整个调用（含重试），默认 30s |
+| `WithTimeout(d)` | 约束整个调用（含重试），默认 30s；零值移除限制 |
 | `WithHeader(k, v)` / `WithQuery(k, v)` | 每个请求的默认头 / 查询对 |
 | `WithBasicAuth(user, pass)` / `WithBearerToken(token)` | 默认 `Authorization` 头 |
 | `WithRetry(cfg)` | 启用自动重试（见下） |
@@ -73,7 +73,7 @@ if err := resp.JSON(&out); err != nil {
 | `WithTLSConfig(cfg)` | 自定义 TLS 配置 |
 | `WithCookieJar(jar)` | 跨调用 Cookie 持久化 |
 | `WithMaxRedirects(n)` | 重定向上限（默认 10；0 表示禁用跟随，直接返回 3xx 响应） |
-| `WithMaxResponseBody(n)` | 响应体字节上限（`ErrResponseTooLarge`） |
+| `WithMaxResponseBody(n)` | 响应体字节上限（`ErrResponseTooLarge`）；默认无限制 |
 | `WithRequestHook(hooks...)` | 在请求完全构建后、发送前执行——签名、审计、日志的挂点；返回错误则中止调用 |
 | `WithResponseHook(hooks...)` | 在响应到达且响应体缓冲后执行 |
 | `WithTransport(rt)` / `WithHTTPClient(hc)` | 自定义传输 / 完全自定义 `http.Client`（与传输层选项互斥——`ErrConflictingOptions`） |
@@ -119,7 +119,7 @@ client, err := httpx.New(
 | 路径参数 | `SetPathParam`、`SetPathParams` —— 替换 `:name` 片段；未解析的片段返回 `ErrMissingPathParam` |
 | Cookie / 认证 | `SetCookie`、`SetBasicAuth`、`SetBearerToken` |
 | 请求体 | `SetJSON(v)`、`SetXML(v)`、`SetBody(bytes, contentType)`、`SetBodyReader(r, contentType)`、`SetForm(map)`、`AddFormField(k, v)`、`AddFile(field, path)`、`AddFileReader(field, filename, r)` |
-| 超时 | `SetTimeout(d)` —— 按请求覆盖客户端超时 |
+| 超时 | `SetTimeout(d)` —— 按请求覆盖客户端超时；零值移除限制 |
 | 执行 | `Get`、`Post`、`Put`、`Patch`、`Delete`、`Head`、`Options` 或 `Do(ctx, method, url)` |
 | 自省 | `Method()`、`URL()`、`Header(k)`、`Headers()`、`Body()`、`Context()` —— 请求钩子使用的读取面 |
 
@@ -149,9 +149,9 @@ client, err := httpx.New(
 | `MaxAttempts` | `3` | 总尝试次数，含首个调用 |
 | `InitialBackoff` | `100ms` | 首次重试前的基础延迟；每次重试翻倍并施加全抖动 |
 | `MaxBackoff` | `2s` | 尝试间延迟上限，含服务端 `Retry-After` |
-| `RetryIf` | 见下 | 自定义谓词，整体替换默认策略 |
+| `RetryIf` | — | `func(resp *Response, err error) bool` — 自定义谓词，整体替换默认策略。`resp` 与 `err` 恰有一个非 nil。 |
 
-默认策略在传输错误或 `429`/`502`/`503`/`504` 响应时重试，且**仅限幂等
+默认策略在传输错误（`context.Canceled`、`context.DeadlineExceeded` 与 `ErrResponseTooLarge` 除外）或 `429`/`502`/`503`/`504` 响应时重试，且**仅限幂等
 方法**（GET、HEAD、PUT、DELETE、OPTIONS、TRACE）——除非 `RetryIf` 放行，
 POST 永不重试。
 
@@ -193,7 +193,7 @@ resp, err := client.NewRequest().Get(ctx, "http://example.test/anything")
 | 错误 | 触发 |
 | --- | --- |
 | `ErrInvalidOption` | 畸形的 base/proxy URL 或其他非法选项值 |
-| `ErrConflictingOptions` | `WithHTTPClient` 与传输层选项同时使用 |
+| `ErrConflictingOptions` | `WithHTTPClient` 与传输层选项同时使用；`WithTransport` 与 `WithProxy` 或 `WithTLSConfig` 同时使用 |
 | `ErrInvalidRequestURL` | 无法解析的请求 URL，或没有 base URL 时使用相对 URL |
 | `ErrMissingPathParam` | `:name` 片段未被解析 |
 | `ErrRequestReused` | 一次性请求被二次执行 |

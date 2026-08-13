@@ -328,16 +328,6 @@ schema 也会执行这个大小限制。有 schema 时，额外的表单 key 会
 | `ColumnDataType` | `string`、`text`、`integer`、`decimal`、`boolean`、`date`、`datetime`、`json` |
 | `Permission` | `visible`、`editable`、`hidden`、`required` |
 
-### 发起人规则校验
-
-创建或更新流程时，发起人规则会被校验：
-
-- `isAllInitiationAllowed` 为 `true` 时，不能同时提供 `initiators`，否则报错
-  `ErrInitiatorsNotAllowed`（码 `40022`）。
-- `isAllInitiationAllowed` 为 `false` 时，必须至少提供一条 `ids` 非空的发起人规则，
-  否则报错 `ErrInitiatorsRequired`（码 `40023`）。
-- 单条规则的 `ids` 必须至少包含一个用户、角色或部门。
-
 ---
 
 下一步：[实例运行时](./runtime.md) 了解设计好的流程启动后会发生什么。

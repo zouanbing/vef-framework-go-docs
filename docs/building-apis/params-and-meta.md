@@ -127,7 +127,7 @@ For REST requests:
 
 | Input source | Lands in | Notes |
 | --- | --- | --- |
-| route path parameters | `params` | path placeholders from the operation's route pattern (for example `:id`) |
+| custom action sub-path parameters | `params` | path placeholders declared on the action sub-path (for example `DELETE /:id`); the resource name itself is always a fixed segment |
 | query string | `params` | used for read filters and plain request fields |
 | JSON body on `POST` / `PUT` / `PATCH` | `params` | write payload |
 | multipart fields on `POST` / `PUT` / `PATCH` | `params` | includes uploaded files |

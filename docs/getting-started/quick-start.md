@@ -87,7 +87,7 @@ The two event blocks are required even though this example never touches storage
 go run .
 ```
 
-If startup succeeds, VEF will print the application banner and begin listening on the configured port.
+If startup succeeds, VEF will log a startup message and begin listening on the configured port.
 
 ## 4. Call the RPC endpoint
 

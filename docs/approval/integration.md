@@ -142,8 +142,6 @@ Business write-back is a durable desired-state projection, not a per-trigger wri
 | `FinishedAtColumn` | `finishedAtColumn` | optional; receives the finish time for final statuses, `NULL` otherwise |
 | `StatusMapping` | `statusMapping` | optional `InstanceStatus` → host status value map; missing entries fall back to the raw status string (`ErrBindingStatusMappingInvalid` rejects unknown statuses and blank values) |
 
-
-
 Convergence works in three steps:
 
 1. **Claim at start.** Inside the `start_instance` transaction the engine resolves the record key and claims one durable projection row per physical target (`apv_business_projection`, unique per table + record key). A non-final instance already owning the target blocks the claim with `ErrBindingTargetBusy` (code `40108`); a final owner is superseded, and the previously applied owner is retained as the business-table CAS fence until the new desired state is actually written. The instance links to its claim via `Instance.BusinessProjectionID`.

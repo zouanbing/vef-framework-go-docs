@@ -91,7 +91,7 @@ my-app/
 ## 最小配置
 
 下面是能够启动的最小配置——SQLite、默认内存存储，以及存储模块要求的
-outbox 事件传输：
+`vef.storage.*` 事务性路由（本例使用 outbox 传输）：
 
 ```toml
 [vef.app]

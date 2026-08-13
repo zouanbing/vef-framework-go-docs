@@ -16,10 +16,11 @@ vef-framework-go-docs/
 │   ├── infrastructure/            # 8  Infrastructure
 │   ├── ai-integration/            # 9  AI Integration
 │   ├── approval/                   # 10 Approval (workflow/approval engine)
-│   ├── advanced/                  # 11 Advanced
-│   ├── utilities/                 # 12 Utilities
-│   ├── conventions/               # 13 Conventions
-│   ├── reference/                 # 14 Reference (incl. generated API indexes)
+│   ├── integration/               # 11 Integration
+│   ├── advanced/                  # 12 Advanced
+│   ├── utilities/                 # 13 Utilities
+│   ├── conventions/               # 14 Conventions
+│   ├── reference/                 # 15 Reference (incl. generated API indexes)
 │   └── intro.md                   # 1  Introduction
 ├── i18n/
 │   └── zh-Hans/
@@ -76,11 +77,12 @@ Use a translated `label` in the Chinese mirror; keep `position` identical.
 | 7 | data-tools | Data Tools | 数据工具 |
 | 8 | infrastructure | Infrastructure | 基础设施 |
 | 9 | ai-integration | AI Integration | AI 集成 |
-| 10 | approval | Approval | 审批 |
-| 11 | advanced | Advanced | 进阶 |
-| 12 | utilities | Utilities | 工具库 |
-| 13 | conventions | Conventions | 约定规范 |
-| 14 | reference | Reference | 参考 |
+| 10 | approval | Approval Workflow | 审批 |
+| 11 | integration | Integration | 集成 |
+| 12 | advanced | Advanced | 进阶 |
+| 13 | utilities | Utilities | 工具库 |
+| 14 | conventions | Conventions | 约定规范 |
+| 15 | reference | Reference | 参考 |
 
 ## Development Workflow
 

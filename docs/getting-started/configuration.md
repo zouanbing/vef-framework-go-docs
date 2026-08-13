@@ -110,6 +110,42 @@ Key fields:
 - `enabled`: enable CORS middleware
 - `allow_origins`: list of allowed origins
 
+### `vef.event`
+
+Event bus, transport, routing, and consume middleware settings. A typical
+minimal setup enables the outbox transport and routes storage events to it:
+
+```toml
+[vef.event.transports.outbox]
+enabled = true
+
+[[vef.event.routing]]
+pattern    = "vef.storage.*"
+transports = ["outbox", "memory"]
+```
+
+Key fields:
+
+- `default_transport`: fallback transport when no routing rule matches; defaults to `"memory"`
+- `async_queue_size`: capacity of the async fan-in queue; defaults to `4096`
+- `async_workers`: goroutines draining the async queue; defaults to `4`
+- `publish_timeout`: cap on an individual transport publish call; defaults to `5s`
+
+Per-transport blocks:
+
+- `vef.event.transports.memory`: in-process transport (`queue_size`, `full_policy`, `publish_timeout`)
+- `vef.event.transports.tx_memory`: in-process transactional transport; disabled by default (`enabled = false`)
+- `vef.event.transports.outbox`: persistent outbox (`enabled`, `relay_interval`, `max_retries`, `batch_size`, `sink`, `cleanup_interval`, `completed_ttl`)
+- `vef.event.transports.redis_stream`: Redis Streams transport; disabled by default (`enabled = false`)
+
+Middleware and inbox toggles:
+
+- `vef.event.middleware`: `logging`, `tracing`, `tracing_strict`, `metrics`, `recover`, `inbox`
+- `vef.event.inbox`: `retention`, `processing_lease`, `cleanup_interval`
+
+Routing rules are matched top-to-bottom; the first rule whose `pattern`
+matches wins, and fan-out is expressed by listing multiple transports.
+
 ### `vef.security`
 
 Security-related runtime settings:
@@ -225,7 +261,7 @@ enabled = true       # WebSocket push endpoint at /ws
 ```
 
 Full key lists live in the
-[Configuration Reference](../reference/configuration-reference#vef-cron)
+[Configuration Reference](../reference/configuration-reference#vefcron)
 and the module guides:
 [Durable Schedules](../infrastructure/cron-store),
 [Integration Engine](../integration/overview), and

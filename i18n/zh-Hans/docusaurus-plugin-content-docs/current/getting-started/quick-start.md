@@ -87,7 +87,7 @@ transports = ["outbox", "memory"]
 go run .
 ```
 
-只要启动成功，VEF 就会打印应用 banner 并开始监听端口。
+只要启动成功，VEF 就会记录启动日志并开始监听端口。
 
 ## 4. 调用 RPC 入口
 

@@ -144,7 +144,7 @@ What each piece does:
 - `validate` tags run automatically before your operation executes; `label` names the field in error messages
 - `search` tags translate directly into `WHERE` clauses: `keyword` becomes a `LIKE` match across `name` OR `code`, `minStock` becomes `stock >= ?`
 - `ID` stays empty on create (the framework generates one) and is required on update
-- pointer fields distinguish "not provided" from a zero value — update merges non-empty fields only, so `IsActive *bool` is what lets a client explicitly send `false`
+- pointer fields in request params distinguish "not provided" from a zero value. Because the model's `IsActive` is a plain `bool`, the update merge still treats an explicit `false` as a zero value and keeps the stored value; if you need to clear a flag to `false`, the model field would also have to be a pointer (and the column nullable)
 
 ## 4. Assemble the API resource
 
@@ -247,7 +247,7 @@ pattern = "vef.storage.*"
 transports = ["outbox", "memory"]
 ```
 
-The last two blocks are new compared to the quick start. The generic write operations run the [file storage](../infrastructure/storage.md) lifecycle inside their transactions, and storage publishes its domain events through a transactional transport — the framework fails fast at startup if `vef.storage.*` events have no such route. Enabling the outbox transport (it creates its own table automatically) and routing storage events through it satisfies the check; the route lists `"memory"` — the outbox's default sink — alongside `"outbox"` so the events stay subscribable in-process.
+The only difference from the quick-start configuration is `path = "data/app.db"`, which points the primary data source at the file created in step 2. The event blocks are the same as in the quick start: the framework always verifies that `vef.storage.*` events have a transactional route, so the outbox transport and routing rule are still required. Enabling the outbox transport (it creates its own table automatically) and routing storage events through it satisfies the check; the route lists `"memory"` — the outbox's default sink — alongside `"outbox"` so the events stay subscribable in-process.
 
 Start the app:
 

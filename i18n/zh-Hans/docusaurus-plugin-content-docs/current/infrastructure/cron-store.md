@@ -109,12 +109,12 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | `StartsAt` / `EndsAt` | 可选触发窗口；`StartsAt` 同时是 interval 触发器的相位锚点 |
 | `MisfirePolicy` | `fire_now`（默认）或 `skip`（见下） |
 | `ConcurrencyPolicy` | `forbid`（默认）或 `allow`（见下） |
-| `Recover` | 重新触发执行中途被遗弃的运行；要求处理器幂等 |
+| `Recover` | 重新触发未完成的运行（执行中途被遗弃，或因优雅关机被取消）；要求处理器幂等 |
 | `Timeout` | 单次运行上限（必须是整毫秒）；0 继承 `vef.cron.store.run_timeout` |
 | `Enabled` | 初始/更新后的启用状态；`nil` 表示启用 |
 
-调用方提供的时间（`Trigger.At`、`StartsAt`、`EndsAt`）在持久化前统一
-归一化到本地墙钟，其他时区构建的时刻读回后仍表示同一瞬间。
+调用方提供的时间（`Trigger.At`、`StartsAt`、`EndsAt`）以绝对 Unix 毫秒
+epoch 持久化（读回时为 UTC），因此任何时区构建的时刻读回后仍表示同一瞬间。
 
 ## 策略
 
@@ -298,7 +298,7 @@ vef.ProvideCronJobHandler(func(svc *ReportService) cron.JobHandler {
 | `endsAtUnixMs` | `int64`（unix 毫秒） | 否 | 触发窗口终点；必须晚于 `startsAtUnixMs` |
 | `misfirePolicy` | `string` | 否 | `fire_now`（省略时默认）或 `skip` |
 | `concurrencyPolicy` | `string` | 否 | `forbid`（省略时默认）或 `allow` |
-| `recover` | `bool` | 否 | 重新触发被遗弃的运行；处理器必须幂等 |
+| `recover` | `bool` | 否 | 重新触发未完成的运行（执行中途被遗弃，或因优雅关机被取消）；处理器必须幂等 |
 | `timeoutMs` | `int64` | 否 | 单次运行超时；0 继承 `vef.cron.store.run_timeout`；负值被拒绝 |
 | `enabled` | `bool` | 否 | 省略表示启用 |
 
@@ -428,7 +428,8 @@ run_timeout = "0s"         # 默认单次运行上限；0 表示不限
 run_retention = "0s"       # 流水账保留；0 表示永久保留
 ```
 
-启动校验拒绝负的时长以及比心跳间隔两倍更紧的 `abandoned_after`
+启动校验拒绝负的时长、比心跳间隔两倍更紧的 `abandoned_after`、负的
+`batch_size` 以及负的 `max_concurrent`
 （否则健康执行器会被判死亡）。
 
 ## 下一步

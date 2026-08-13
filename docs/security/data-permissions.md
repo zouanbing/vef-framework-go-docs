@@ -31,13 +31,13 @@ Many CRUD operations can automatically apply data-permission filtering:
 
 That means handlers often do not need to know the details of row-level permission enforcement.
 
-In practice, automatic filtering still depends on your application providing a working data-permission source. If the default RBAC resolver has no usable permission loader behind it, there may be no scope to apply.
+In practice, automatic filtering still depends on your application providing a working data-permission source. If the default RBAC resolver has no usable permission loader behind it, there may be no scope to apply. When an operation requires a permission token, a missing resolver or a resolver error fails the request with HTTP 403; a nil scope (no matching permission) simply skips filtering.
 
 If you rely on the default RBAC data-permission resolver, treat `security.RolePermissionsLoader` as the practical prerequisite for meaningful row-level filtering.
 
 ## Disabling Automatic Data Permission
 
-Some CRUD builders expose `DisableDataPerm()` for cases where automatic filtering is not appropriate.
+All find, update, and delete CRUD builders (including batch variants) expose `DisableDataPerm()` for cases where automatic filtering is not appropriate. Create operations have no query to filter, so they do not offer it.
 
 Use it carefully. If you disable data permission on a privileged endpoint, you are taking responsibility for enforcing the correct data boundary elsewhere.
 

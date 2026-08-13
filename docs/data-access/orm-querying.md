@@ -555,12 +555,20 @@ db.NewSelect().Model(&tasks).
 // FOR SHARE
 db.NewSelect().Model(&user).ForShare().Scan(ctx)
 
+// FOR SHARE NOWAIT / SKIP LOCKED
+db.NewSelect().Model(&user).ForShareNoWait().Scan(ctx)
+db.NewSelect().Model(&user).ForShareSkipLocked().Scan(ctx)
+
 // FOR KEY SHARE / FOR NO KEY UPDATE (PostgreSQL only)
 db.NewSelect().Model(&user).ForKeyShare().Scan(ctx)
 db.NewSelect().Model(&user).ForNoKeyUpdate().Scan(ctx)
+
+// FOR NO KEY UPDATE NOWAIT / SKIP LOCKED (PostgreSQL only)
+db.NewSelect().Model(&user).ForNoKeyUpdateNoWait().Scan(ctx)
+db.NewSelect().Model(&user).ForNoKeyUpdateSkipLocked().Scan(ctx)
 ```
 
-> Dialect support: SQLite does not support row-level locking — calls are silently ignored with a warning. `FOR NO KEY UPDATE` and `FOR KEY SHARE` are PostgreSQL-only; on MySQL they are silently ignored with a warning. Each dialect-and-lock-mode combination warns once per process to avoid flooding the log of a loop that locks rows.
+> Dialect support: SQLite does not support row-level locking — calls are silently ignored with a warning. `FOR NO KEY UPDATE` and `FOR KEY SHARE` are PostgreSQL-only; on MySQL they are silently ignored with a warning. Each lock mode also has `NoWait` and `SkipLocked` variants. Each dialect-and-lock-mode combination warns once per process to avoid flooding the log of a loop that locks rows.
 
 ## Execution Methods
 

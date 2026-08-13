@@ -88,11 +88,11 @@ A separate read-side resource (`sys/storage/file`) exposes one action:
 
 | Action | Access | Input | Output | Purpose |
 | --- | --- | --- | --- | --- |
-| `file/resolve` | Bearer auth (engine default) | `ResolveParams` | `ResolveResult` | Resolve a batch of object keys (≤ 200) into per-file metadata — original filename, content type, size, status, upload timestamp. Keys not visible to the caller are silently omitted. |
+| `file/resolve` | Bearer auth (engine default) | `ResolveParams` | `ResolveResult` | Resolve a batch of object keys (≤ 200) into per-file metadata — key, original filename, content type, size, status, upload timestamp, and uploader (`uploadedBy`). Keys not visible to the caller are silently omitted. |
 
 This resource is intentionally separate from the multipart upload lifecycle: it is a query surface over the durable file registry, not a step in the chunked-upload state machine. Authorization mirrors the download proxy — `pub/` keys are open, everything else goes through `storage.FileACL.CanRead`.
 
-None of the five actions declares a per-action permission, a public flag, a
+None of these actions declares a per-action permission, a public flag, a
 custom rate limit, or audit logging, so all of them inherit the API engine
 defaults: Bearer authentication plus the default rate limit (100 requests per
 5-minute sliding window unless `vef.api.rate_limit` overrides it). On top of
@@ -265,13 +265,12 @@ Behavior — abort is the retry-safe cleanup path:
   still rejected with `result.ErrAccessDenied`.
 - Only `pending` claims are aborted. Calling it on an `uploaded` claim is a
   no-op success — abort never deletes a finalized object.
-- A pending claim's backend session is aborted, any published object bytes are
-  deleted, and one transaction drops the part rows and the claim row.
+- A pending claim is released in one transaction: the part rows and the claim row are removed, and a `pending_delete` row is inserted for the backend session. The delete worker then aborts the backend session and deletes any published bytes asynchronously, with retry/backoff and dead-lettering. This makes abort crash-safe and means it never fails on a temporarily unreachable backend.
 - The success response carries no payload: `data` is `null`.
 
 ## Client Walkthrough: Multipart Upload
 
-The exact wire sequence a client implements against `POST /api`, shown for a 40 MiB `report.pdf` on a MinIO-backed server (`partSize` 16 MiB, so 3 parts). All five actions require authentication (Bearer by default), and every follow-up call routes by the `claimId` returned from `init_upload` — the backend's multipart `UploadID` never leaves the server. Success responses use the standard envelope (`message` text is language-dependent); failures reuse it with a non-zero `code` from the storage range (2200–2299, see the error table below).
+The exact wire sequence a client implements against `POST /api`, shown for a 40 MiB `report.pdf` on a MinIO-backed server (`partSize` 16 MiB, so 3 parts). All six actions require authentication (Bearer by default), and every follow-up call routes by the `claimId` returned from `init_upload` — the backend's multipart `UploadID` never leaves the server. Success responses use the standard envelope (`message` text is language-dependent); failures reuse it with a non-zero `code` from the storage range (2200–2299, see the error table below).
 
 ### 1. `init_upload`
 
@@ -472,6 +471,9 @@ Behavior:
 Every uploaded file is recorded in a durable registry table (`sys_storage_file`,
 public model `storage.FileRecord`). The registry is what makes a stored key
 nameable after the short-lived upload claim row is deleted by business adoption.
+`Lookup` also returns records of deleted objects — `FileRecord.IsDeleted()`
+(and status `deleted`) distinguishes them so a business row that still
+references a deleted key can still render its filename.
 
 ```go
 type FileRegistry interface {
@@ -493,6 +495,10 @@ type FileRegistry interface {
 | `claimedAt` | timestamp | when a business transaction adopted the file; nil while unreferenced |
 | `deletedAt` | timestamp | when the delete worker removed the object; nil while the object exists |
 | `deleteReason` | `string` | reason for deletion; empty until deleted |
+| `uploadedBy` | `string` | principal ID that uploaded the object; surfaced from the embedded `createdBy` audit column |
+
+`FileRecord` also embeds the standard identity/audit columns (`id`, `createdAt`,
+`createdBy`); `createdBy` is the uploader surfaced as `uploadedBy` by `resolve`.
 
 `FileStatus` values:
 
@@ -535,6 +541,19 @@ Storage fails fast at startup unless `vef.storage.file.claimed`,
 transactional event transport. In practice, enable the outbox transport and add
 a route for `vef.storage.*` to `outbox`, or set the default event transport to
 `outbox`.
+
+Lifecycle worker configuration (all under `vef.storage`):
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `sweep_interval` | `5m` | how often the claim sweeper runs |
+| `sweep_batch_size` | `200` | claims examined per sweep |
+| `orphan_retention` | `0` (disabled) | reclaim completed-but-unclaimed uploads older than this; disabled by default because it deletes user data |
+| `delete_worker_interval` | `5m` | how often the delete worker polls |
+| `delete_batch_size` | `100` | pending-delete rows consumed per tick |
+| `delete_concurrency` | `8` | concurrent backend delete operations |
+| `delete_max_attempts` | `12` | retry attempts before dead-lettering |
+| `delete_lease_window` | `5m` | lease duration for a pending-delete row |
 
 ## `Files` and `FilesFor[T]`
 

@@ -87,11 +87,11 @@ type Multipart interface {
 
 | Action | 访问方式 | 入参 | 出参 | 作用 |
 | --- | --- | --- | --- | --- |
-| `file/resolve` | Bearer 认证（引擎默认） | `ResolveParams` | `ResolveResult` | 批量解析 object key（≤ 200）为文件元数据——原始文件名、内容类型、大小、状态、上传时间。调用方不可见的 key 会被静默省略。 |
+| `file/resolve` | Bearer 认证（引擎默认） | `ResolveParams` | `ResolveResult` | 批量解析 object key（≤ 200）为文件元数据——key、原始文件名、内容类型、大小、状态、上传时间、上传者（`uploadedBy`）。调用方不可见的 key 会被静默省略。 |
 
 该资源故意与分片上传协议分离：它是持久文件注册表上的查询接口，而非分片上传状态机的一步。授权逻辑与下载代理一致——`pub/` 下的 key 公开可读，其余 key 经过 `storage.FileACL.CanRead`。
 
-五个 action 均未声明 per-action 权限、public 标志、自定义限流或审计日志，
+这些 action 均未声明 per-action 权限、public 标志、自定义限流或审计日志，
 因此全部继承 API 引擎默认值：Bearer 认证加默认限流（每 5 分钟滑动窗口 100
 次请求，除非 `vef.api.rate_limit` 覆盖）。在认证之上，每个接收 `claimId`
 的 action 都会强制按 claim 校验归属 —— 只有创建该 claim 的 principal 才能
@@ -250,13 +250,15 @@ action。`public` 标志默认按私有处理，只有 `vef.storage.allow_public
   `result.ErrAccessDenied` 拒绝。
 - 只有 `pending` claim 会被中止。对 `uploaded` claim 调用是 no-op 成功
   —— abort 绝不会删除已完成的对象。
-- pending claim 的后端 session 会被中止，已发布的对象字节会被删除，最后在同一事务里删掉
-  part 行与 claim 行。
+- pending claim 在一个事务里被释放：part 行与 claim 行被删除，并插入一条
+  `pending_delete` 记录以便后端清理。删除工作器随后异步中止后端 session 并
+  删除已发布字节，带重试/退避和死信队列。这使得 abort 具有崩溃安全性，
+  且不会因后端临时不可用而失败。
 - 成功响应没有载荷：`data` 为 `null`。
 
 ## 客户端演练：分片上传
 
-以下是客户端对 `POST /api` 实现的完整线上（wire）序列，示例为在 MinIO 后端上传一个 40 MiB 的 `report.pdf`（`partSize` 16 MiB，共 3 片）。五个 action 都要求认证（默认 Bearer），后续每个调用都通过 `init_upload` 返回的 `claimId` 路由 —— 后端的 multipart `UploadID` 永远不会离开服务端。成功响应使用标准信封（`message` 文案随语言变化）；失败复用同一信封，`code` 取存储错误码区间（2200–2299，见下方错误表）。
+以下是客户端对 `POST /api` 实现的完整线上（wire）序列，示例为在 MinIO 后端上传一个 40 MiB 的 `report.pdf`（`partSize` 16 MiB，共 3 片）。全部六个 action 都要求认证（默认 Bearer），后续每个调用都通过 `init_upload` 返回的 `claimId` 路由 —— 后端的 multipart `UploadID` 永远不会离开服务端。成功响应使用标准信封（`message` 文案随语言变化）；失败复用同一信封，`code` 取存储错误码区间（2200–2299，见下方错误表）。
 
 ### 1. `init_upload`
 
@@ -455,6 +457,8 @@ GET /storage/files/<key>
 每个上传的文件都会被记录在持久化的注册表（`sys_storage_file`，公开模型
 `storage.FileRecord`）中。注册表的意义在于：当短暂的 upload claim 行被业务
 采纳删除后，只有注册表能回答"这个 key 对应什么文件"。
+`Lookup` 也会返回已删除对象的记录——`FileRecord.IsDeleted()`（和状态
+`deleted`）可以区分它们，因此仍然引用已删除 key 的业务行也能渲染文件名。
 
 ```go
 type FileRegistry interface {
@@ -476,6 +480,10 @@ type FileRegistry interface {
 | `claimedAt` | 时间戳 | 业务事务采纳时间；未被引用时为 nil |
 | `deletedAt` | 时间戳 | delete worker 删除时间；对象仍存在时为 nil |
 | `deleteReason` | `string` | 删除原因；删除前为空 |
+| `uploadedBy` | `string` | 上传该对象的 principal ID；由嵌入的审计列 `createdBy` 映射而来 |
+
+`FileRecord` 还嵌入了标准身份/审计列（`id`、`createdAt`、`createdBy`）；
+`createdBy` 即上传者，`resolve` 将其作为 `uploadedBy` 返回。
 
 `FileStatus` 取值：
 
@@ -516,6 +524,19 @@ Storage 会在启动时检查 `vef.storage.file.claimed`、
 事务性 event transport；否则直接启动失败。实践中应启用 outbox transport，
 并把 `vef.storage.*` 路由到 `outbox`，或者把默认 event transport 设为
 `outbox`。
+
+生命周期工作器配置（均在 `vef.storage` 下）：
+
+| 配置键 | 默认值 | 作用 |
+| --- | --- | --- |
+| `sweep_interval` | `5m` | claim sweeper 运行间隔 |
+| `sweep_batch_size` | `200` | 每次扫描的 claim 数 |
+| `orphan_retention` | `0`（禁用） | 回收完成但未被引用超过该时长的上传；默认禁用，因为会删除用户数据 |
+| `delete_worker_interval` | `5m` | delete worker 轮询间隔 |
+| `delete_batch_size` | `100` | 每轮消费的 pending-delete 行数 |
+| `delete_concurrency` | `8` | 并发后端删除操作数 |
+| `delete_max_attempts` | `12` | 死信前重试次数 |
+| `delete_lease_window` | `5m` | pending-delete 行租赁时长 |
 
 ## `Files` 与 `FilesFor[T]`
 

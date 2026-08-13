@@ -78,7 +78,7 @@ type Lock interface {
 | API | Contract |
 | --- | --- |
 | `lock.NewMemoryLocker() lock.Locker` | creates an in-process locker for single-instance deployments and tests |
-| `lock.NewRedisLocker(client *redis.Client) lock.Locker` | creates a Redis-backed locker for cross-replica mutual exclusion |
+| `lock.NewRedisLocker(client *redis.Client) lock.Locker` | creates a Redis-backed locker for cross-replica mutual exclusion; panics if `client` is nil |
 
 `Acquire` retries until the `WithWait` window is exhausted (no waiting by
 default); `TryAcquire` is a single non-blocking attempt. Both return
@@ -93,9 +93,9 @@ lost; loss is detected by the auto-renewal watchdog, so without
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `WithTTL(d)` | `lock.DefaultTTL` (30s) | lease duration; auto-expires this long after acquisition or the last refresh, bounding how long a crashed holder can block others |
+| `WithTTL(d)` | `lock.DefaultTTL` (30s) | lease duration; auto-expires this long after acquisition or the last refresh, bounding how long a crashed holder can block others. Non-positive values fall back to `lock.DefaultTTL` |
 | `WithWait(d)` | 0 (no waiting) | how long `Acquire` keeps retrying before giving up with `ErrNotAcquired` |
-| `WithRetryInterval(d)` | `lock.DefaultRetryInterval` (100ms) | polling cadence of a waiting `Acquire` |
+| `WithRetryInterval(d)` | `lock.DefaultRetryInterval` (100ms) | polling cadence of a waiting `Acquire`. Non-positive values fall back to `lock.DefaultRetryInterval` |
 | `WithAutoRenew(on)` | off for bare `Acquire` / `TryAcquire`; on inside `WithLock` | background watchdog refreshes the lease at TTL/3, so a healthy holder never expires mid-work while a crashed one still frees the lock within one TTL |
 
 Auto-renewal requires a TTL of at least `lock.MinAutoRenewTTL` (30ms);
@@ -109,7 +109,7 @@ shorter leases fail the acquisition with `lock.ErrAutoRenewTTLTooShort`.
   safely outlive the TTL;
 - cancels `fn`'s context as soon as the lease is lost;
 - **always releases** afterwards — even when `fn` panics — on a context that
-  survives request cancellation;
+  survives request cancellation, bounded by a 5-second release timeout;
 - returns the joined error of `fn` and the release: a successful `fn` still
   yields an error when the release reports `lock.ErrNotHeld`, because the
   exclusive section can no longer be trusted to have been exclusive.

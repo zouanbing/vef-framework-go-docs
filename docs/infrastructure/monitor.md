@@ -23,15 +23,15 @@ The public monitoring service exposes:
 
 | Method | Return type | Purpose |
 | --- | --- | --- |
-| `Overview(ctx)` | `*monitor.SystemOverview` | combined overview snapshot |
-| `CPU(ctx)` | `*monitor.CPUInfo` | CPU detail and usage |
-| `Memory(ctx)` | `*monitor.MemoryInfo` | virtual and swap memory detail |
-| `Disk(ctx)` | `*monitor.DiskInfo` | partitions and disk I/O detail |
-| `Network(ctx)` | `*monitor.NetworkInfo` | interfaces and network I/O detail |
-| `Host(ctx)` | `*monitor.HostInfo` | static host metadata |
-| `Process(ctx)` | `*monitor.ProcessInfo` | current process detail |
-| `Load(ctx)` | `*monitor.LoadInfo` | load averages |
-| `BuildInfo()` | `*monitor.BuildInfo` | build metadata |
+| `Overview(ctx)` | `(*monitor.SystemOverview, error)` | combined overview snapshot |
+| `CPU(ctx)` | `(*monitor.CPUInfo, error)` | CPU detail and usage |
+| `Memory(ctx)` | `(*monitor.MemoryInfo, error)` | virtual and swap memory detail |
+| `Disk(ctx)` | `(*monitor.DiskInfo, error)` | partitions and disk I/O detail |
+| `Network(ctx)` | `(*monitor.NetworkInfo, error)` | interfaces and network I/O detail |
+| `Host(ctx)` | `(*monitor.HostInfo, error)` | static host metadata |
+| `Process(ctx)` | `(*monitor.ProcessInfo, error)` | current process detail |
+| `Load(ctx)` | `(*monitor.LoadInfo, error)` | load averages |
+| `BuildInfo()` | `*monitor.BuildInfo` | build metadata (no error) |
 
 ## Built-In Resource
 
@@ -41,7 +41,7 @@ The monitor module registers the `sys/monitor` RPC resource, mounted under
 permission token: every action inherits the API engine's default Bearer
 authentication.
 
-Every action sets a custom per-operation rate limit of `max 60`. The window
+Every action sets a custom per-operation rate limit of `Max: 60`. The window
 length is not overridden, so it inherits `vef.api.rate_limit.period`
 (default `5m`); the limiter counts per operation + client IP + principal,
 in process memory on each node.
@@ -51,17 +51,17 @@ ignored and may be omitted entirely.
 
 | Action | Access | Rate limit | Input | Output |
 | --- | --- | --- | --- | --- |
-| `get_overview` | Bearer auth | `max 60` | none | `monitor.SystemOverview` |
-| `get_cpu` | Bearer auth | `max 60` | none | `monitor.CPUInfo` |
-| `get_memory` | Bearer auth | `max 60` | none | `monitor.MemoryInfo` |
-| `get_disk` | Bearer auth | `max 60` | none | `monitor.DiskInfo` |
-| `get_network` | Bearer auth | `max 60` | none | `monitor.NetworkInfo` |
-| `get_host` | Bearer auth | `max 60` | none | `monitor.HostInfo` |
-| `get_process` | Bearer auth | `max 60` | none | `monitor.ProcessInfo` |
-| `get_load` | Bearer auth | `max 60` | none | `monitor.LoadInfo` |
-| `get_build_info` | Bearer auth | `max 60` | none | `monitor.BuildInfo` |
-| `get_event_streams` | Bearer auth | `max 60` | none | `monitor.EventStreamsInfo` |
-| `get_integration_stats` | Bearer auth | `max 60` | none | `monitor.IntegrationStatsInfo` |
+| `get_overview` | Bearer auth | `Max: 60` | none | `monitor.SystemOverview` |
+| `get_cpu` | Bearer auth | `Max: 60` | none | `monitor.CPUInfo` |
+| `get_memory` | Bearer auth | `Max: 60` | none | `monitor.MemoryInfo` |
+| `get_disk` | Bearer auth | `Max: 60` | none | `monitor.DiskInfo` |
+| `get_network` | Bearer auth | `Max: 60` | none | `monitor.NetworkInfo` |
+| `get_host` | Bearer auth | `Max: 60` | none | `monitor.HostInfo` |
+| `get_process` | Bearer auth | `Max: 60` | none | `monitor.ProcessInfo` |
+| `get_load` | Bearer auth | `Max: 60` | none | `monitor.LoadInfo` |
+| `get_build_info` | Bearer auth | `Max: 60` | none | `monitor.BuildInfo` |
+| `get_event_streams` | Bearer auth | `Max: 60` | none | `monitor.EventStreamsInfo` |
+| `get_integration_stats` | Bearer auth | `Max: 60` | none | `monitor.IntegrationStatsInfo` |
 
 Behavior visible in source:
 
@@ -95,7 +95,7 @@ Behavior visible in source:
 
 ## Default Sampling Configuration
 
-When no explicit monitor config is supplied, the module uses:
+Defaults apply per unset field (a partial config only overrides the fields it sets):
 
 | Setting | Default |
 | --- | --- |
@@ -110,7 +110,7 @@ window after startup), both actions answer with `monitor.ErrNotReady`.
 
 ## Build Info Behavior
 
-The monitor module decorates build info so that `vefVersion` is always present, even when the application does not provide a complete build metadata object.
+The service constructor normalizes build info so that `vefVersion` is always present, even when the application does not provide a complete build metadata object.
 
 Fallback behavior:
 

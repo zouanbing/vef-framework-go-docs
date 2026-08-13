@@ -22,7 +22,7 @@ The public `api` package exposes strategy helpers:
 - `api.Public()`
 - `api.BearerAuth()`
 - `api.SignatureAuth()`
-- `api.IPAuth(...)` (see [Signature helpers](./authentication-reference#signature-helpers) below for how it resolves whitelists)
+- `api.IPAuth(...)` (see [Signature helpers](./authentication-reference#signature-helpers) below for how it resolves whitelists); the built-in strategy is fail-closed: a missing, empty, or unparseable whitelist denies every request with `security.ErrIPNotAllowed` (HTTP 401). That "empty means allow all" behavior belongs to the lower-level `IPWhitelistValidator` used by signature external apps, not to `api.IPAuth(...)`
 - `api.APIKeyAuth(...)`
 - `api.HTTPBasicAuth()`
 
@@ -151,7 +151,9 @@ The framework enforces this invariant fail-closed at every boundary:
 - **Challenge flow**: challenge-token parsing rejects reserved principal
   types and reserved IDs as `ErrTokenInvalid`; after a challenge provider
   resolves, `resolve_challenge` refuses a reserved result with
-  `ErrReservedPrincipal`.
+  `ErrReservedPrincipal`. Challenge tokens carry only the principal ID in
+  their subject; user name, department, and other metadata live in separate
+  claims.
 
 The built-in password login additionally refuses the reserved identifiers
 (`system`, `cron_job`, and `anonymous`) as a login `principal`. Custom

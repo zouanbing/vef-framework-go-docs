@@ -120,7 +120,7 @@ typed 请求控制信息就是这样注入的。
 
 | 输入来源 | 最终落点 | 说明 |
 | --- | --- | --- |
-| 路由 path 参数 | `params` | 操作路由模式中的路径占位符（例如 `:id`） |
+| 自定义 action 子路径参数 | `params` | action 子路径中声明的路径占位符（例如 `DELETE /:id`）；资源名本身始终是固定段 |
 | query string | `params` | 读操作过滤条件或普通请求字段 |
 | `POST` / `PUT` / `PATCH` 的 JSON body | `params` | 写入 payload |
 | `POST` / `PUT` / `PATCH` 的 multipart 字段 | `params` | 包括上传文件 |

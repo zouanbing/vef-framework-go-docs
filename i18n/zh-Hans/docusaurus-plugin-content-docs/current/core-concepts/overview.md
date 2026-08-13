@@ -142,7 +142,7 @@ vef.ProvideDataSourceProvider(NewTenantDataSourceProvider)
 - `vef.SupplyBusinessRefResolver(...)`
 
 `vef.SupplyMCPServerInfo(...)` 不同：它 supply 单个 `mcp.ServerInfo` 值。
-`vef.SupplySPAConfigs(...)` 也不同：它把一个或多个 `middleware.SPAConfig` 值
+`vef.SupplySPAConfigs(...)` 也不同：它把一个或多个 `*middleware.SPAConfig` 指针
 supply 到 `vef:spa` group。
 
 当集成代码需要在 DI 之外拿框架日志接口时，可以使用
@@ -160,9 +160,9 @@ vef.Run(
 ```
 
 `vef.ApprovalModule` 会开启审批/工作流功能，并注册它的 API resources、
-CQRS handlers、engine、业务投影 worker 和 scanners。审批的
+CQRS handlers、engine、业务投影 worker 和审批 scanner。审批的
 `approval.*` 事件需要 transactional route；路由细节
-见[审批模块](../approval/overview) 。
+见[审批模块](../approval/) 。
 
 `vef.IntegrationModule` 开启集成引擎——契约、系统、适配器、路由、
 入站 HTTP 网关与 `integration/*` 管理资源；见

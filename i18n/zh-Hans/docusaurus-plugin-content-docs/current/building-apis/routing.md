@@ -145,8 +145,8 @@ REST action 字符串支持：
 | path params | `params` | 从 Fiber route params 提取 |
 | query string | `params` | 永远视为 params，而不是 meta |
 | `POST` / `PUT` / `PATCH` 的 JSON body | `params` | 对象字段合并进 params |
-| multipart form 字段 | `params` | 文本表单字段进入 params |
-| multipart 上传文件 | `params` | 文件数组进入 params |
+| `POST` / `PUT` / `PATCH` 的 multipart form 字段 | `params` | 文本表单字段进入 params |
+| `POST` / `PUT` / `PATCH` 的 multipart 上传文件 | `params` | 文件数组进入 params |
 
 ## `meta` 如何收集
 

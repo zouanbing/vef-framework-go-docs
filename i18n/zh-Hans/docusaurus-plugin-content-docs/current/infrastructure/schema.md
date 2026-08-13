@@ -7,7 +7,7 @@ sidebar_position: 8
 VEF 内置了一个 schema 检查 service，以及一个可通过应用 API 读取数据库结构的内置资源。
 
 内置实现只检查 primary data source。它通过 Atlas 支持 PostgreSQL、MySQL 和
-SQLite。PostgreSQL 会使用已配置的 `vef.datasource.*.schema`，未配置时默认
+SQLite。PostgreSQL 会使用已配置的 `vef.data_sources.*.schema`，未配置时默认
 为 `public`；MySQL 检查当前 `DATABASE()`；SQLite 检查 `main` schema。
 
 ## 模块输出
@@ -26,9 +26,9 @@ schema 模块会提供：
 
 | 方法 | 返回类型 | 作用 |
 | --- | --- | --- |
-| `ListTables(ctx)` | `[]schema.Table` | 列出当前 schema / database 下的表 |
-| `GetTableSchema(ctx, name)` | `*schema.TableSchema` | 检查单张表的详细结构 |
-| `ListViews(ctx)` | `[]schema.View` | 列出视图 |
+| `ListTables(ctx)` | `([]schema.Table, error)` | 列出当前 schema / database 下的表 |
+| `GetTableSchema(ctx, name)` | `(*schema.TableSchema, error)` | 检查单张表的详细结构 |
+| `ListViews(ctx)` | `([]schema.View, error)` | 列出视图 |
 
 ## 内置资源
 
@@ -43,9 +43,9 @@ principal」计数，每个节点在进程内存中独立执行。
 
 | Action | 访问 | 限流 | 入参 | 出参 |
 | --- | --- | --- | --- | --- |
-| `list_tables` | Bearer 认证 | `max 60` | 无 | `[]schema.Table` |
-| `get_table_schema` | Bearer 认证 | `max 60` | `GetTableSchemaParams` | `schema.TableSchema` |
-| `list_views` | Bearer 认证 | `max 60` | 无 | `[]schema.View` |
+| `list_tables` | Bearer 认证 | `Max = 60` | 无 | `[]schema.Table` |
+| `get_table_schema` | Bearer 认证 | `Max = 60` | `GetTableSchemaParams` | `schema.TableSchema` |
+| `list_views` | Bearer 认证 | `Max = 60` | 无 | `[]schema.View` |
 
 各 action 的用途：
 

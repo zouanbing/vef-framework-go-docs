@@ -215,8 +215,8 @@ stored secrets with a symmetric cipher. The algorithm is configurable via
 | `"aes"` (default) | AES | GCM |
 | `"sm4"` | SM4 | GCM |
 
-The config key is `config.IntegrationSecretAlgorithm`; its constants are
-`config.IntegrationSecretAlgorithmAES` (`"aes"`) and
+The config field's Go type is `config.IntegrationSecretAlgorithm`; its constants
+are `config.IntegrationSecretAlgorithmAES` (`"aes"`) and
 `config.IntegrationSecretAlgorithmSM4` (`"sm4"`). An unrecognized value fails
 config validation with `config.ErrInvalidIntegrationSecretAlgorithm`.
 

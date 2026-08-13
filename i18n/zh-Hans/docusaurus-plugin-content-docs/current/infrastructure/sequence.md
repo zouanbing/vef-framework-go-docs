@@ -16,7 +16,7 @@ sidebar_position: 4
 框架已经把 `sequence.Generator` 装配好了，也会暴露具体的 `*sequence.MemoryStore`，所以业务模块可以在启动期 seed rule，然后调用 `Generate(ctx, key)`。
 
 辅助函数 `sequence.FormatDate(dt, format)` 也是公开 API。它会使用
-`Rule.DateFormat` 相同的 `yyyy` / `MM` / `dd` / `HH` / `mm` / `ss` token
+`Rule.DateFormat` 相同的 `yyyy` / `yy` / `MM` / `dd` / `HH` / `mm` / `ss` token
 渲染日期片段。
 
 ## 定义规则
@@ -99,7 +99,7 @@ fallback 处理为“不重置”。对非 none 周期，`LastResetAt == nil` �
 | --- | --- |
 | `sequence.OverflowError`（默认） | 返回 `sequence.ErrSequenceOverflow`，直到下次重置都拒绝生成。 |
 | `sequence.OverflowReset` | 把计数器重置到 `StartValue` 后继续。 |
-| `sequence.OverflowExtend` | 不受 `SeqLength` 限制继续递增（结果会变长）。 |
+| `sequence.OverflowExtend` | 超过 `MaxValue` 后继续计数（不报错、不重置）；渲染结果可能超出 `SeqLength` 的零填充位宽（位数变长）。 |
 
 `MaxValue` 会在应用周期 reset 后再检查。如果 reset 边界已经把计数器回到
 `StartValue`，但本次批量预留仍然超过 `MaxValue`，即便
@@ -111,9 +111,12 @@ fallback 处理为“不重置”。对非 none 周期，`LastResetAt == nil` �
 
 当前内置运行时 store 是内存实现，且不持久化：进程重启后计数器和已注册
 rule 都会丢失。它适合测试、开发和单进程部署；需要分布式或持久化计数时，
-应提供自定义 `sequence.Store`。
+应替换当前生效的 `sequence.Store`——例如通过 `fx.Decorate`/`vef.Decorate` 把
+`sequence.Store` 装饰为 `sequence.NewDBStore` 或 `sequence.NewRedisStore`，
+或提供自定义实现。
 
-`sequence.Store.Reserve(ctx, key, count, now)` 是自定义 store 的契约边界。
+`sequence.Store.Reserve(ctx context.Context, key string, count int, now timex.DateTime)
+(*Rule, int, error)` 是自定义 store 的契约边界。
 实现必须按 rule key 序列化 read-modify-write 路径，并用一次原子操作预留整
 个 `count` 批次。
 
@@ -142,7 +145,8 @@ func SeedSequenceRules(store *sequence.MemoryStore) {
 `sequence.NewDBStore(db)` 返回基于 `sys_sequence_rule` 表的
 `*sequence.DBStore`，表名常量是 `sequence.DBStoreTableName`。`DBStore.Init(ctx)`
 会在表不存在时创建它；`Reserve(...)` 会对 rule 行加锁并在数据库事务内原子预留计数。
-`sequence.RuleModel` 是该表对应的 ORM model。
+`sequence.RuleModel` 是该表对应的 ORM model。当 `DBStore` 为当前生效 store 时，
+框架会在启动阶段自动调用 `Init`，因此无需手动接线即可建表。
 
 ### Redis
 

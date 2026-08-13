@@ -116,13 +116,13 @@ update:
 | `StartsAt` / `EndsAt` | optional fire window; `StartsAt` also anchors the fixed-rate phase of interval triggers |
 | `MisfirePolicy` | `fire_now` (default) or `skip` (below) |
 | `ConcurrencyPolicy` | `forbid` (default) or `allow` (below) |
-| `Recover` | re-fire runs abandoned mid-execution; requires idempotent handlers |
+| `Recover` | re-fire runs that did not complete (abandoned mid-execution, or canceled by graceful shutdown); requires idempotent handlers |
 | `Timeout` | per-run bound (whole milliseconds); zero inherits `vef.cron.store.run_timeout` |
 | `Enabled` | initial/updated enablement; `nil` means enabled |
 
-Caller-supplied times (`Trigger.At`, `StartsAt`, `EndsAt`) are normalized to
-the local wall clock before persistence, so an instant built in another zone
-still denotes the same moment when read back.
+Caller-supplied times (`Trigger.At`, `StartsAt`, `EndsAt`) are persisted as
+absolute Unix-millisecond epochs (and read back as UTC), so an instant built in
+any zone still denotes the same moment when read back.
 
 ## Policies
 
@@ -316,7 +316,7 @@ struct is strict):
 | `endsAtUnixMs` | `int64` (unix ms) | No | fire window end; must be after `startsAtUnixMs` |
 | `misfirePolicy` | `string` | No | `fire_now` (default when omitted) or `skip` |
 | `concurrencyPolicy` | `string` | No | `forbid` (default when omitted) or `allow` |
-| `recover` | `bool` | No | re-fire abandoned runs; handlers must be idempotent |
+| `recover` | `bool` | No | re-fire runs that did not complete (abandoned mid-execution, or canceled by graceful shutdown); handlers must be idempotent |
 | `timeoutMs` | `int64` | No | per-run timeout; zero inherits `vef.cron.store.run_timeout`; negative values are rejected |
 | `enabled` | `bool` | No | omitted means enabled |
 
@@ -449,9 +449,9 @@ run_timeout = "0s"         # default per-run bound; zero leaves runs unbounded
 run_retention = "0s"       # journal retention; zero keeps rows forever
 ```
 
-Validation rejects negative durations and an `abandoned_after` tighter than
-twice the heartbeat interval (healthy executors would be declared dead) at
-startup.
+Validation rejects negative durations, an `abandoned_after` tighter than
+twice the heartbeat interval (healthy executors would be declared dead),
+negative `batch_size`, and negative `max_concurrent` at startup.
 
 ## Next Step
 

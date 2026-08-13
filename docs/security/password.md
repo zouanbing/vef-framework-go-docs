@@ -68,7 +68,7 @@ needsUpgrade := encoder.UpgradeEncoding("{sha256}abc123...")
 // → true (because default is bcrypt, not sha256)
 ```
 
-`UpgradeEncoding` returns `true` immediately for any valid non-default prefix.
+`UpgradeEncoding` returns `true` immediately for any non-default prefix, even if that prefix is not registered.
 For the default prefix or a no-prefix value, it delegates to the default
 encoder's own `UpgradeEncoding` logic, such as bcrypt cost comparison.
 
@@ -156,8 +156,8 @@ adds the outer `{algorithm}` prefix before that encoded value.
 | --- | --- |
 | `ErrInvalidCost` | bcrypt cost is outside `4..31` |
 | `ErrInvalidMemory` | Argon2 memory is too small |
-| `ErrInvalidIterations` | iteration count is lower than `1` |
-| `ErrInvalidParallelism` | Argon2 parallelism is lower than `1` |
+| `ErrInvalidIterations` | Argon2/PBKDF2 iterations below `1`, or scrypt `N < 2` / `r < 1` |
+| `ErrInvalidParallelism` | Argon2 or scrypt parallelism lower than `1` |
 | `ErrInvalidEncoderID` | defined but currently unused: `Matches` answers `false` for an unknown prefix and `Encode` fails with `ErrDefaultEncoderNotFound`, so no code path returns this sentinel today |
-| `ErrInvalidHashFormat` | encoded password format is malformed |
+| `ErrInvalidHashFormat` | encoded password format is malformed, or PBKDF2 is configured with an unsupported hash function (only `sha256`/`sha512` are accepted) |
 | `ErrDefaultEncoderNotFound` | default encoder ID is not registered in `CompositeEncoder` |

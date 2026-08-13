@@ -23,15 +23,15 @@ VEF 内置了一个监控 service，以及一个用于运行时检查的内置�
 
 | 方法 | 返回类型 | 作用 |
 | --- | --- | --- |
-| `Overview(ctx)` | `*monitor.SystemOverview` | 返回综合概览快照 |
-| `CPU(ctx)` | `*monitor.CPUInfo` | 返回 CPU 详情与使用率 |
-| `Memory(ctx)` | `*monitor.MemoryInfo` | 返回虚拟内存与 swap 详情 |
-| `Disk(ctx)` | `*monitor.DiskInfo` | 返回磁盘分区与 I/O 详情 |
-| `Network(ctx)` | `*monitor.NetworkInfo` | 返回网络接口与 I/O 详情 |
-| `Host(ctx)` | `*monitor.HostInfo` | 返回主机静态元数据 |
-| `Process(ctx)` | `*monitor.ProcessInfo` | 返回当前进程详情 |
-| `Load(ctx)` | `*monitor.LoadInfo` | 返回系统负载 |
-| `BuildInfo()` | `*monitor.BuildInfo` | 返回构建元数据 |
+| `Overview(ctx)` | `(*monitor.SystemOverview, error)` | 返回综合概览快照 |
+| `CPU(ctx)` | `(*monitor.CPUInfo, error)` | 返回 CPU 详情与使用率 |
+| `Memory(ctx)` | `(*monitor.MemoryInfo, error)` | 返回虚拟内存与 swap 详情 |
+| `Disk(ctx)` | `(*monitor.DiskInfo, error)` | 返回磁盘分区与 I/O 详情 |
+| `Network(ctx)` | `(*monitor.NetworkInfo, error)` | 返回网络接口与 I/O 详情 |
+| `Host(ctx)` | `(*monitor.HostInfo, error)` | 返回主机静态元数据 |
+| `Process(ctx)` | `(*monitor.ProcessInfo, error)` | 返回当前进程详情 |
+| `Load(ctx)` | `(*monitor.LoadInfo, error)` | 返回系统负载 |
+| `BuildInfo()` | `*monitor.BuildInfo` | 返回构建元数据（无 error） |
 
 ## 内置资源
 
@@ -40,7 +40,7 @@ envelope（`resource`、`action`、`version`、`params`、`meta`）。没有任�
 操作是公开的，也没有声明专门的权限点：每个 action 都继承 API 引擎默认的
 Bearer 认证。
 
-每个 action 都单独设置了 `max 60` 的限流上限。窗口长度未覆写，因此继承
+每个 action 都单独设置了 `Max: 60` 的限流上限。窗口长度未覆写，因此继承
 `vef.api.rate_limit.period`（默认 `5m`）；限流按「操作 + 客户端 IP +
 principal」计数，每个节点在进程内存中独立执行。
 
@@ -48,17 +48,17 @@ principal」计数，每个节点在进程内存中独立执行。
 
 | Action | 访问 | 限流 | 入参 | 出参 |
 | --- | --- | --- | --- | --- |
-| `get_overview` | Bearer 认证 | `max 60` | 无 | `monitor.SystemOverview` |
-| `get_cpu` | Bearer 认证 | `max 60` | 无 | `monitor.CPUInfo` |
-| `get_memory` | Bearer 认证 | `max 60` | 无 | `monitor.MemoryInfo` |
-| `get_disk` | Bearer 认证 | `max 60` | 无 | `monitor.DiskInfo` |
-| `get_network` | Bearer 认证 | `max 60` | 无 | `monitor.NetworkInfo` |
-| `get_host` | Bearer 认证 | `max 60` | 无 | `monitor.HostInfo` |
-| `get_process` | Bearer 认证 | `max 60` | 无 | `monitor.ProcessInfo` |
-| `get_load` | Bearer 认证 | `max 60` | 无 | `monitor.LoadInfo` |
-| `get_build_info` | Bearer 认证 | `max 60` | 无 | `monitor.BuildInfo` |
-| `get_event_streams` | Bearer 认证 | `max 60` | 无 | `monitor.EventStreamsInfo` |
-| `get_integration_stats` | Bearer 认证 | `max 60` | 无 | `monitor.IntegrationStatsInfo` |
+| `get_overview` | Bearer 认证 | `Max: 60` | 无 | `monitor.SystemOverview` |
+| `get_cpu` | Bearer 认证 | `Max: 60` | 无 | `monitor.CPUInfo` |
+| `get_memory` | Bearer 认证 | `Max: 60` | 无 | `monitor.MemoryInfo` |
+| `get_disk` | Bearer 认证 | `Max: 60` | 无 | `monitor.DiskInfo` |
+| `get_network` | Bearer 认证 | `Max: 60` | 无 | `monitor.NetworkInfo` |
+| `get_host` | Bearer 认证 | `Max: 60` | 无 | `monitor.HostInfo` |
+| `get_process` | Bearer 认证 | `Max: 60` | 无 | `monitor.ProcessInfo` |
+| `get_load` | Bearer 认证 | `Max: 60` | 无 | `monitor.LoadInfo` |
+| `get_build_info` | Bearer 认证 | `Max: 60` | 无 | `monitor.BuildInfo` |
+| `get_event_streams` | Bearer 认证 | `Max: 60` | 无 | `monitor.EventStreamsInfo` |
+| `get_integration_stats` | Bearer 认证 | `Max: 60` | 无 | `monitor.IntegrationStatsInfo` |
 
 源码中可见的行为语义：
 
@@ -89,7 +89,7 @@ principal」计数，每个节点在进程内存中独立执行。
 
 ## 默认采样配置
 
-当没有显式提供 monitor 配置时，模块默认使用：
+默认值按未设置字段生效（部分配置只会覆盖它设置的字段）：
 
 | 配置项 | 默认值 |
 | --- | --- |
@@ -103,7 +103,7 @@ principal」计数，每个节点在进程内存中独立执行。
 
 ## 构建信息行为
 
-monitor 模块会对构建信息做装饰，保证 `vefVersion` 一定存在，即使应用没有提供完整构建元数据对象。
+service 构造函数会对构建信息做归一化，保证 `vefVersion` 一定存在，即使应用没有提供完整构建元数据对象。
 
 回退行为如下：
 

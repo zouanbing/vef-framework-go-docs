@@ -67,7 +67,7 @@ for concurrent use; per-call state lives in the `Request`.
 | Option | Behavior |
 | --- | --- |
 | `WithBaseURL(url)` | absolute URL every relative request URL joins onto; absolute request URLs bypass it |
-| `WithTimeout(d)` | bounds a whole call, retries included (default 30s) |
+| `WithTimeout(d)` | bounds a whole call, retries included (default 30s; zero removes the bound) |
 | `WithHeader(k, v)` / `WithQuery(k, v)` | default header / query pair on every request |
 | `WithBasicAuth(user, pass)` / `WithBearerToken(token)` | default `Authorization` header |
 | `WithRetry(cfg)` | enables automatic retries (below) |
@@ -75,7 +75,7 @@ for concurrent use; per-call state lives in the `Request`.
 | `WithTLSConfig(cfg)` | custom TLS configuration |
 | `WithCookieJar(jar)` | cookie persistence across calls |
 | `WithMaxRedirects(n)` | redirect cap (default 10; zero disables following and returns the 3xx response as-is) |
-| `WithMaxResponseBody(n)` | response body byte cap (`ErrResponseTooLarge`) |
+| `WithMaxResponseBody(n)` | response body byte cap (`ErrResponseTooLarge`); default unlimited |
 | `WithRequestHook(hooks...)` | runs after a request is fully built and before it is sent — the hook point for signing, audit, logging; a returned error aborts the call |
 | `WithResponseHook(hooks...)` | runs after a response arrives and its body is buffered |
 | `WithTransport(rt)` / `WithHTTPClient(hc)` | custom transport / fully custom `http.Client` (mutually exclusive with transport-level options — `ErrConflictingOptions`) |
@@ -124,7 +124,7 @@ client, err := httpx.New(
 | Path params | `SetPathParam`, `SetPathParams` — substitute `:name` segments; unresolved segments fail with `ErrMissingPathParam` |
 | Cookies / auth | `SetCookie`, `SetBasicAuth`, `SetBearerToken` |
 | Body | `SetJSON(v)`, `SetXML(v)`, `SetBody(bytes, contentType)`, `SetBodyReader(r, contentType)`, `SetForm(map)`, `AddFormField(k, v)`, `AddFile(field, path)`, `AddFileReader(field, filename, r)` |
-| Timeout | `SetTimeout(d)` — per-request override of the client timeout |
+| Timeout | `SetTimeout(d)` — per-request override of the client timeout; zero removes the bound |
 | Execute | `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, or `Do(ctx, method, url)` |
 | Introspection | `Method()`, `URL()`, `Header(k)`, `Headers()`, `Body()`, `Context()` — the read surface request hooks use |
 
@@ -157,9 +157,10 @@ resolve to defaults:
 | `MaxAttempts` | `3` | total attempts, the first call included |
 | `InitialBackoff` | `100ms` | base delay before the first retry; doubles per retry, with full jitter |
 | `MaxBackoff` | `2s` | cap on the delay between attempts, a server-sent `Retry-After` included |
-| `RetryIf` | see below | custom predicate replacing the default policy entirely |
+| `RetryIf` | — | `func(resp *Response, err error) bool` — custom predicate replacing the default policy entirely. Exactly one of `resp` and `err` is non-nil. |
 
-The default policy retries a transport error or a `429`/`502`/`503`/`504`
+The default policy retries a transport error (except `context.Canceled`,
+`context.DeadlineExceeded`, and `ErrResponseTooLarge`) or a `429`/`502`/`503`/`504`
 response, and **only for idempotent methods** (GET, HEAD, PUT, DELETE,
 OPTIONS, TRACE) — a POST is never retried unless `RetryIf` allows it.
 
@@ -204,7 +205,7 @@ resp, err := client.NewRequest().Get(ctx, "http://example.test/anything")
 | Error | Trigger |
 | --- | --- |
 | `ErrInvalidOption` | malformed base/proxy URL or other invalid option value |
-| `ErrConflictingOptions` | `WithHTTPClient` combined with transport-level options |
+| `ErrConflictingOptions` | `WithHTTPClient` combined with transport-level options; `WithTransport` combined with `WithProxy` or `WithTLSConfig` |
 | `ErrInvalidRequestURL` | unparsable request URL, or a relative URL without a base URL |
 | `ErrMissingPathParam` | a `:name` segment left unresolved |
 | `ErrRequestReused` | second execution of a single-use request |

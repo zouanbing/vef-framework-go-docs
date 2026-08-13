@@ -150,8 +150,8 @@ For REST requests, VEF merges multiple sources into `params`:
 | path params | `params` | extracted from Fiber route params |
 | query string | `params` | always treated as params, not meta |
 | JSON body on `POST` / `PUT` / `PATCH` | `params` | object body fields are merged into params |
-| multipart form fields | `params` | text form fields go into params |
-| multipart uploaded files | `params` | file arrays go into params |
+| multipart form fields on `POST` / `PUT` / `PATCH` | `params` | text form fields go into params |
+| multipart uploaded files on `POST` / `PUT` / `PATCH` | `params` | file arrays go into params |
 
 ## How `meta` Is Collected
 

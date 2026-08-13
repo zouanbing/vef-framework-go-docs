@@ -8,17 +8,16 @@ sidebar_position: 2
 
 ## 启动顺序
 
-这是 VEF 启动流水线的权威表述，来自 `bootstrap.go`（`vef.Run` 直接装配
-`config` 和 `datasource`）以及 `internal/bootmodules.Core()`（业务模块的顺序
-列表，由 `vef.Run` 和 `internal/apptest` 测试脚手架共用，保证两个 FX 图不会
-出现分叉）：
+这是 VEF 启动流水线的权威表述，来自 `bootstrap.go`（`vef.Run`）以及
+`internal/bootmodules/bootmodules.go` 的 `Assemble` 函数（由 `vef.Run` 和
+`internal/apptest` 测试脚手架共用，保证两个 FX 图不会出现分叉）：
 
-`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> tx_memory -> outbox -> redis-stream -> inbox -> schema -> monitor -> mcp -> push -> app`
+`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> tx_memory -> outbox -> redis_stream -> inbox -> schema -> monitor -> mcp -> push -> app`
 
 `datasource` 是单独的一步：它在同一个模块里把 `*sql.DB` 连接起来（通过
 `internal/database`）并包装成 `orm.DB`（通过 `internal/orm`）——启动流程里
-并不存在独立的 `database` 或 `orm` 步骤。`tx_memory`、`outbox`、`redis-stream`、
-`inbox` 是事件传输子模块——即 tx_memory 传输模块、outbox 传输模块、redis-stream
+并不存在独立的 `database` 或 `orm` 步骤。`tx_memory`、`outbox`、`redis_stream`、
+`inbox` 是事件传输子模块——即 tx_memory 传输模块、outbox 传输模块、redis_stream
 传输模块和 inbox 模块——排在 `sequence` 之后、`schema` 之前注册。`js` 是共享
 JS 引擎模块，`push` 是 WebSocket 推送模块。
 
@@ -28,7 +27,7 @@ JS 引擎模块，`push` 是 WebSocket 推送模块。
 - 配置供给一切
 - datasource 供给需要 `orm.DB` 的 API 处理器
 - 安全模块供给受认证请求
-- 事件传输子模块（tx_memory、outbox、redis-stream、inbox）构建在核心
+- 事件传输子模块（tx_memory、outbox、redis_stream、inbox）构建在核心
   `event` 模块之上
 - storage、monitor、schema、MCP、push 都在 app 开始监听前完成装配
 
@@ -39,13 +38,14 @@ JS 引擎模块，`push` 是 WebSocket 推送模块。
 1. 用 `fx.WithLogger(newFxLogger)` 安装框架 FX logger
 2. 添加 internal config module（内部配置模块）
 3. 添加 internal datasource module（内部数据源模块）
-4. 追加 `bootmodules.Core()` 返回的全部 option
+4. 追加 `bootmodules.Assemble` 返回的全部 option
 5. 追加用户传入的 `options...`
-6. 追加 `fx.Invoke(startApp)`
-7. 追加 `fx.StartTimeout(defaultTimeout)`
-8. 追加 `fx.StopTimeout(defaultTimeout*2)`
-9. 用 `fx.New(opts...)` 创建 app
-10. 用 `app.Run()` 运行它
+6. 追加 `fx.Invoke(cron.StartScheduler)`
+7. 追加 `fx.Invoke(startApp)`
+8. 追加 `fx.StartTimeout(defaultTimeout)`
+9. 追加 `fx.StopTimeout(defaultTimeout*2)`
+10. 用 `fx.New(opts...)` 创建 app
+11. 用 `app.Run()` 运行它
 
 `defaultTimeout` 是 `30 * time.Second`，所以默认启动超时是 `30s`，
 默认停止超时是 `60s`。

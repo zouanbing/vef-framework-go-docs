@@ -150,9 +150,11 @@ principal type——`system`、空值与未知类型一律以 `ErrTokenInvalid` 
 | `rls` | （标准 JWT claim） | 用户角色（`claimRoles`）——在 access token 和 challenge token 中均携带 |
 | `rsd` | `ClaimChallengeResolved` | 已解决的挑战类型，按解决顺序排列——已完成的类型 |
 
-标准 JWT claim（`jti`、`sub`、`iss`、`aud`、`iat`、`nbf`、`exp`、`typ`）
-由 `JWT.Generate` 设置，由 `JWT.Parse` 校验，issuer 为 `JWTIssuer`（`vef`），
-audience 为 `DefaultJWTAudience`（`vef-app`），10 秒 `leeway`，`HS256` 签名。
+`JWT.Generate` 设置 `iss`、`aud`、`iat`、`nbf`、`exp`；`jti`、`sub`、`typ`
+由调用方的 `JWTClaimsBuilder` 在签名前写入，随后由 `JWT.Parse` 校验。
+parser 校验 issuer 为 `JWTIssuer`（`vef`），audience 为 `JWTConfig.Audience`
+（security 模块使用 snake-cased 的 `vef.app.name`，仅当未配置 audience 时才回退到
+`DefaultJWTAudience`（`vef-app`）），10 秒 `leeway`，`HS256` 签名。
 
 挑战 token 携带 `typ: "challenge"`，在 `ChallengeTokenExpires`（`5m`）后过期。
 `sub` claim 仅保存 principal ID；`pnm` 保存显示名。`det` 和 `rls` 与标准
@@ -180,7 +182,9 @@ delivered-code helper 会把 `OTPCodeStore` 和 `OTPCodeDelivery` 组合起来�
 也就是 `Authenticator App`；也可以用 `WithTOTPDestination(...)` 覆盖。
 
 `NewPasswordChangeChallengeProvider` 使用 `PasswordChangeChecker` 和
-`PasswordChanger`；需要强制改密时会返回 `PasswordChangeChallengeData`。常见 reason
+`PasswordChanger`，并接收可选的 `security.PasswordValidator`（传 `nil`
+跳过强度校验；可注入框架基于 `vef.security.password_policy` 的配置化校验器）；
+需要强制改密时会返回 `PasswordChangeChallengeData`。常见 reason
 常量是 `PasswordChangeReasonFirstLogin`（`first_login`）和
 `PasswordChangeReasonExpired`（`expired`）。具体 provider
 类型是 `PasswordChangeChallengeProvider`。`NewDepartmentSelectionChallengeProvider` 使用
@@ -232,7 +236,8 @@ app_id=<appID>&method=<method>&nonce=<nonce>&path=<path>&timestamp=<timestamp>
 内置 `api.IPAuth(...)` strategy 使用它。该 strategy 会通过
 `security.IPWhitelistLoader` 解析命名的 `security.IPWhitelist`；默认 loader 读取
 `vef.security.ip_whitelists`，应用也可以提供自己的 loader，从数据库或配置中心加载
-名单。
+名单。该内置策略是 fail-closed 的：缺失、空白或无法解析的白名单会一律以
+`security.ErrIPNotAllowed`（HTTP 401）拒绝请求。
 
 Signature 相关存储 key 和默认值：
 
@@ -321,11 +326,11 @@ code——见[登录加固](./login-hardening)）：
 
 | Constant | Message ID | 触发场景 |
 | --- | --- | --- |
-| `ErrMessageUnauthenticated` | `security_unauthenticated` | `ErrUnauthenticated`——无 bearer token 时返回的 sentinel |
+| `ErrMessageUnauthenticated` | `security_unauthenticated` | `ErrUnauthenticated`——通用 `1000` 未认证响应背后的 message ID；缺失 bearer token 时由全局错误处理映射为 HTTP 401 并带该 code/message |
 | `ErrMessageExternalAppLoaderNotImplemented` | `security_external_app_loader_not_implemented` | `SignatureAuthenticator.Authenticate` 在 `ExternalAppLoader` 为 nil 时 |
 | `ErrMessageCredentialsFormatInvalid` | `security_credentials_format_invalid` | `SignatureAuthenticator.Authenticate` 在 credentials 类型不是 `*SignatureCredentials` 时 |
 | `ErrMessageUnsupportedAuthenticationType` | `security_unsupported_authentication_type` | `AuthManager.Authenticate` 在无 authenticator 支持给定的 `type` 时 |
-| `ErrMessageUserLoaderNotImplemented` | `security_user_loader_not_implemented` | `JWTRefreshAuthenticator.Authenticate` 在 `UserLoader` 为 nil 时 |
+| `ErrMessageUserLoaderNotImplemented` | `security_user_loader_not_implemented` | `PasswordAuthenticator.Authenticate` 与 `JWTRefreshAuthenticator.Authenticate` 在 `UserLoader` 为 nil 时 |
 | `ErrMessageUserInfoLoaderNotImplemented` | `security_user_info_loader_not_implemented` | `AuthResource.GetUserInfo` 在 `UserInfoLoader` 为 nil 时 |
 | `ErrMessageChallengeResolveFailed` | `security_challenge_resolve_failed` | `resolve_challenge` 将 `ChallengeProvider.Resolve` 返回的裸 error 归一化为该错误 |
 
@@ -346,7 +351,7 @@ code——见[登录加固](./login-hardening)）：
 | `get_user_info` | Bearer 认证 | API 引擎默认 | 原样 `params` map | `UserInfo` |
 
 自定义限流只设置 `max`；时间窗口回退到 API 引擎的默认限流周期
-（`vef.api.rate_limit`，默认 `5m`）。未声明自定义限流的操作完整继承引擎
+（`vef.api.rate_limit.period`，默认 `5m`）。未声明自定义限流的操作完整继承引擎
 默认值（出厂为每 `5m` `100` 次）。在 `token_type = "opaque_token"` 下，
 `refresh` 操作根本不会挂载——调用它会得到操作不存在错误（HTTP 404），
 因为 opaque 会话在使用中自行续期。
@@ -385,7 +390,7 @@ code——见[登录加固](./login-hardening)）：
 }
 ```
 
-载荷中不携带任何过期时间字段——令牌有效期属于部署配置，需另行告知客户端。
+JSON 响应载荷中不携带过期时间字段——令牌有效期属于部署配置，需另行告知客户端。（JWT 本身携带标准的 `exp`/`iat`/`nbf` claim。）
 
 **形态二——challenge 包络。** 凭证已通过校验，但至少一个
 [challenge provider](#challenge-providers) 要求第二步。此时尚未签发任何

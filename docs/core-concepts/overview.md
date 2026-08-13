@@ -144,7 +144,7 @@ members:
 
 `vef.SupplyMCPServerInfo(...)` is different: it supplies a single
 `mcp.ServerInfo` value. `vef.SupplySPAConfigs(...)` is also different: it
-supplies one or more `middleware.SPAConfig` values into the `vef:spa` group.
+supplies one or more `*middleware.SPAConfig` pointers into the `vef:spa` group.
 
 Use `vef.NamedLogger(name)` when application integration code needs a framework
 `logx.Logger` outside dependency injection.
@@ -162,9 +162,10 @@ vef.Run(
 ```
 
 `vef.ApprovalModule` turns on the approval/workflow feature and registers its API
-resources, CQRS handlers, engine, business-projection worker, and scanners.
+resources, CQRS handlers, engine, business-projection worker, and approval
+scanner.
 Approval's `approval.*` events require a transactional route; see
-[Approval Module](../approval/overview) for the routing details.
+[Approval Module](../approval/) for the routing details.
 
 `vef.IntegrationModule` turns on the integration engine — contracts,
 systems, adapters, routes, the inbound HTTP gateway, and the `integration/*`

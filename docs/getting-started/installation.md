@@ -91,7 +91,8 @@ my-app/
 ## Minimal configuration
 
 This is the smallest configuration that boots — SQLite, the default in-memory
-storage provider, and the outbox event transport the storage module requires:
+storage provider, and a transactional route for `vef.storage.*` events (the
+outbox transport in this example):
 
 ```toml
 [vef.app]

@@ -43,6 +43,7 @@ crud.NewUpdate[User, UserParams]().
 | --- | --- |
 | 权限 | `PermissionChecker`, `RolePermissionsLoader`, `CachedRolePermissionsLoader`, `NewCachedRolePermissionsLoader` |
 | 缓存失效 | `RolePermissionsChangedEvent`, `PublishRolePermissionsChangedEvent` |
+| 数据范围 | `DataScope`, `DataPermissionResolver`, `DataPermissionApplier`, `NewAllDataScope`, `NewSelfDataScope`, `Priority*` 常量 |
 | 用户信息 | `UserInfo`, `UserInfoLoader`, `UserMenu`, `UserMenuType`, `Gender` |
 | 登录审计事件 | `LoginEvent`, `LoginEventParams`, `NewLoginEvent`, `SubscribeLoginEvent` |
 | 认证/授权失败 | `ErrPrincipalInvalid(...)`, `ErrCredentialsInvalid(...)`, `ErrUnauthenticated`, `ErrCodePrincipalInvalid`, `ErrCodeCredentialsInvalid`，以及 permission check 返回的 access-denied 结果 |
@@ -93,7 +94,7 @@ permission token 应该表达的是业务动作本身，而不是传输细节。
 
 ## 权限失败时会怎样
 
-如果权限检查失败，VEF 会返回 access denied 类型的结构化结果，同时保留对应的授权错误码。
+如果权限检查失败，VEF 会返回 access denied 类型的结构化结果，映射为 code `1100`（`result.ErrCodeAccessDenied`，message ID `access_denied`，HTTP 403）。
 
 ## 实践建议
 

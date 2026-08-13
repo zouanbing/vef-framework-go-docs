@@ -66,7 +66,8 @@ Under `opaque_token`, login does not mint a JWT. Instead `OpaqueTokenGenerator`:
 On each authenticated request, `OpaqueTokenAuthenticator` hashes the presented
 bearer token and calls `SessionStore.Lookup`. A hit returns the session's
 `Principal` snapshot directly — no database round trip for user data, since the
-principal is what was current when the session started (or last renewed).
+principal is what was current when the session was created; renewals extend
+lifetime but never refresh the snapshot.
 
 ### Sliding idle timeout, capped by an absolute lifetime
 

@@ -372,14 +372,6 @@ Additional flow-designer enums:
 | `ColumnDataType` | `string`, `text`, `integer`, `decimal`, `boolean`, `date`, `datetime`, `json` |
 | `Permission` | `visible`, `editable`, `hidden`, `required` |
 
-### Initiator-Rule Validation
-
-Initiator rules are validated when a flow is created or updated:
-
-- If `isAllInitiationAllowed` is `true`, no `initiators` may be supplied (`ErrInitiatorsNotAllowed`, code `40022`).
-- If `isAllInitiationAllowed` is `false`, at least one initiator rule with a non-empty `ids` list must be provided (`ErrInitiatorsRequired`, code `40023`).
-- Every individual rule must select at least one user, role, or department.
-
 ---
 
 Next: [Instance Runtime](./runtime.md) for what happens after a designed flow starts running.

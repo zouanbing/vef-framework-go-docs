@@ -16,7 +16,7 @@ Once the framework starts, the following are available for injection:
 | --- | --- |
 | `event.Bus` | combined publish/subscribe entry point |
 | `event.RouteInspector` | read-only routing queries — used to fail fast at OnStart |
-| `transport.Transport` (FX group `vef:event:transports`) | every registered transport (memory, outbox, redis-stream, custom) |
+| `transport.Transport` (FX group `vef:event:transports`) | every registered transport (memory, tx_memory, outbox, redis-stream, custom) |
 | `event.ErrorSink` | sink for out-of-band publish errors (default logs at error) |
 
 The bus lifecycle is driven by FX. Publishing during `fx.Provide` returns `event.ErrBusNotStarted` — move the call into a `fx.Invoke` or lifecycle hook.
@@ -103,7 +103,9 @@ unsub, err := event.SubscribeTyped(bus,
 )
 ```
 
-T can be a pointer type (recommended) or a value type whose pointer also satisfies `Event`. The bus accepts both in-process delivery (payload already typed) and cross-process delivery (`RawPayload` with canonical JSON body). `SubscribeTyped[event.Event]` is rejected with `event.ErrNilTypeParameter`.
+T can be a pointer type (recommended) or a value type whose pointer also satisfies `Event`. The bus always ships events as canonical JSON frames; even in-process delivery
+goes through a marshal/unmarshal round trip so handlers always receive
+`RawPayload`, which `SubscribeTyped[T]` decodes back into `T`. `SubscribeTyped[event.Event]` is rejected with `event.ErrNilTypeParameter`.
 
 ## Envelope and Frame
 
@@ -119,9 +121,9 @@ The framework wraps each `Event` in an `Envelope` carrying transport metadata:
 | `TraceID` / `SpanID` | set by tracing middleware when enabled |
 | `CorrelationID` | `WithCorrelationID(...)`, or `contextx.RequestID(ctx)` when omitted |
 | `Headers` | caller metadata merged by `WithHeaders(...)` and middleware |
-| `Payload` | original `Event` for in-process delivery, `RawPayload` after crossing process boundaries |
+| `Payload` | `RawPayload` on every delivery — the bus JSON-encodes each event into a frame (even for in-process transports) and decodes it back on the consume side; `SubscribeTyped[T]` transparently decodes it into `T` |
 
-Cross-process transports serialize the body into a `transport.Frame` whose `Body` is canonical JSON; the bus decodes it back to `Envelope.Payload = RawPayload{...}` so `SubscribeTyped[T]` can deserialize.
+Cross-process transports serialize the body into a `transport.Frame` whose `Body` is the canonical JSON body of the envelope; the bus decodes it back to `Envelope.Payload = RawPayload{...}` so `SubscribeTyped[T]` can deserialize.
 
 `CorrelationID` crosses every transport boundary, including outbox and Redis Streams. If request IDs are sensitive in your deployment, register a publish middleware that clears or replaces `Envelope.CorrelationID` before persistent transports see the frame.
 
@@ -232,7 +234,7 @@ Public supporting APIs:
 | `event/transport/memory` | `Name`, `Config`, `FullPolicy`, `FullPolicyError`, `FullPolicyBlock`, `FullPolicyDropOldest` |
 | `event/transport/outbox` | `Name`, `Config`, `Status`, `StatusPending`, `StatusProcessing`, `StatusCompleted`, `StatusFailed`, `StatusDead`, `Record`, `Repository` |
 | `event/transport/redisstream` | `Name` and `Config` |
-| `event/transport/txmemory` | `Name` and `Config` |
+| `event/transport/txmemory` | `Name` (configuration lives in `[vef.event.transports.tx_memory]`) |
 
 `ChainPublish` and `ChainConsume` sort middleware by ascending `Order`; equal
 orders preserve registration order. Built-in cron jobs are named

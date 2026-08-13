@@ -108,6 +108,70 @@ _, err := db.NewDelete().Model(user).WherePK().ForceDelete().Exec(ctx)
 err := db.NewDelete().Model(user).WherePK().ReturningAll().Scan(ctx)
 ```
 
+## MERGE（带源的 Upsert）
+
+`MergeQuery` 执行 SQL `MERGE`，将目标表与源数据集同步。它仅在 PostgreSQL 上受支持；在其他数据库方言上，需使用等效的 insert-on-conflict 模式替代。
+
+```go
+// MERGE INTO users AS u USING _source_data AS src ON u.id = src.id
+// WHEN MATCHED THEN UPDATE SET name = src.name, ...
+// WHEN NOT MATCHED THEN INSERT (id, name, ...) VALUES (src.id, src.name, ...)
+_, err := db.NewMerge().
+	Model(&User{}).
+	WithValues("_source_data", &sourceUsers).
+	UsingTable("_source_data").
+	On(func(cb orm.ConditionBuilder) {
+		cb.EqualsColumn("u.id", "_source_data.id")
+	}).
+	WhenMatched().
+	ThenUpdate(func(ub orm.MergeUpdateBuilder) {
+		ub.SetColumns("name", "email", "age", "is_active")
+	}).
+	WhenNotMatched().
+	ThenInsert(func(ib orm.MergeInsertBuilder) {
+		ib.Values("id", "name", "email", "age", "is_active")
+	}).
+	Exec(ctx)
+```
+
+源数据形式：
+
+- `Using(model, alias)` — 使用模型/表作为源。
+- `UsingTable(name, alias)` — 使用已有表或 CTE。
+- `UsingExpr(builder, alias)` / `UsingSubQuery(builder, alias)` — 使用子查询或表达式；默认别名为 `src`，可覆盖。
+
+`WhenMatched`、`WhenNotMatched`、`WhenNotMatchedByTarget` 和
+`WhenNotMatchedBySource` 均返回一个 `MergeWhenBuilder`，支持
+`ThenUpdate`、`ThenInsert`、`ThenDelete` 和 `ThenDoNothing` 动作。
+
+```go
+// 仅在标志不同时更新
+WhenMatched().
+	ThenUpdate(func(ub orm.MergeUpdateBuilder) {
+		ub.SetColumns("email").
+			SetExpr("updated_at", func(eb orm.ExprBuilder) any { return eb.Now() })
+	})
+
+// 仅当版本不一致时才更新
+WhenMatched(func(cb orm.ConditionBuilder) {
+	cb.NotEqualsColumn("u.version", "src.version")
+}).ThenUpdate(func(ub orm.MergeUpdateBuilder) {
+	ub.SetColumns("name", "email")
+})
+
+// 插入目标中不存在的源行
+WhenNotMatched().ThenInsert(func(ib orm.MergeInsertBuilder) {
+	ib.ValuesAll("id") // id 自动生成，不从源复制
+})
+```
+
+`MergeUpdateBuilder` 提供 `Set`、`SetExpr`、`SetColumns` 和 `SetAll`。
+`SetAll` 从源复制每一列；传入要排除的列名（如 `"id"`）可跳过这些列。
+`MergeInsertBuilder` 提供 `Value`、`ValueExpr`、`Values` 和 `ValuesAll`，
+同样支持排除列。
+
+`Returning` / `ReturningAll` / `ReturningNone` 的用法与其他写入查询一致。
+
 ## 原始 SQL 查询
 
 ```go

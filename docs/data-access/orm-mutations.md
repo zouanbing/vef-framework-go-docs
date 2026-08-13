@@ -108,6 +108,74 @@ _, err := db.NewDelete().Model(user).WherePK().ForceDelete().Exec(ctx)
 err := db.NewDelete().Model(user).WherePK().ReturningAll().Scan(ctx)
 ```
 
+## MERGE (Upsert with Source)
+
+`MergeQuery` performs a SQL `MERGE` that synchronizes a target table with a
+source data set. It is supported on PostgreSQL; on other dialects it either does
+not apply or must be replaced with an an equivalent insert-on-conflict pattern.
+
+```go
+// MERGE INTO users AS u USING _source_data AS src ON u.id = src.id
+// WHEN MATCHED THEN UPDATE SET name = src.name, ...
+// WHEN NOT MATCHED THEN INSERT (id, name, ...) VALUES (src.id, src.name, ...)
+_, err := db.NewMerge().
+	Model(&User{}).
+	WithValues("_source_data", &sourceUsers).
+	UsingTable("_source_data").
+	On(func(cb orm.ConditionBuilder) {
+		cb.EqualsColumn("u.id", "_source_data.id")
+	}).
+	WhenMatched().
+	ThenUpdate(func(ub orm.MergeUpdateBuilder) {
+		ub.SetColumns("name", "email", "age", "is_active")
+	}).
+	WhenNotMatched().
+	ThenInsert(func(ib orm.MergeInsertBuilder) {
+		ib.Values("id", "name", "email", "age", "is_active")
+	}).
+	Exec(ctx)
+```
+
+Source forms:
+
+- `Using(model, alias)` — use a model/table as the source.
+- `UsingTable(name, alias)` — use an existing table or CTE.
+- `UsingExpr(builder, alias)` / `UsingSubQuery(builder, alias)` — use a
+  subquery or expression; the default alias is `src` unless overridden.
+
+`WhenMatched`, `WhenNotMatched`, `WhenNotMatchedByTarget`, and
+`WhenNotMatchedBySource` each return a `MergeWhenBuilder` with the actions
+`ThenUpdate`, `ThenInsert`, `ThenDelete`, and `ThenDoNothing`.
+
+```go
+// Update only when a flag differs
+WhenMatched().
+	ThenUpdate(func(ub orm.MergeUpdateBuilder) {
+		ub.SetColumns("email").
+			SetExpr("updated_at", func(eb orm.ExprBuilder) any { return eb.Now() })
+	})
+
+// Skip rows that already look current
+WhenMatched(func(cb orm.ConditionBuilder) {
+	cb.NotEqualsColumn("u.version", "src.version")
+}).ThenUpdate(func(ub orm.MergeUpdateBuilder) {
+	ub.SetColumns("name", "email")
+})
+
+// Insert source rows not found in the target
+WhenNotMatched().ThenInsert(func(ib orm.MergeInsertBuilder) {
+	ib.ValuesAll("id") // id is auto-generated, do not copy from source
+})
+```
+
+`MergeUpdateBuilder` provides `Set`, `SetExpr`, `SetColumns`, and `SetAll`.
+`SetAll` copies every column from the source; pass columns to exclude, such as
+`"id"`, to omit them. `MergeInsertBuilder` provides `Value`, `ValueExpr`,
+`Values`, and `ValuesAll` with the same exclusion behavior.
+
+`Returning` / `ReturningAll` / `ReturningNone` work the same as on other
+mutation queries.
+
 ## Raw Queries
 
 ```go

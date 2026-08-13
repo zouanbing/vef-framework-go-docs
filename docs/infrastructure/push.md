@@ -133,7 +133,7 @@ revocation kicks across nodes via Redis pub/sub:
   Redis never cross-deliver;
 - an enabled relay refuses to start without `vef.app.name` — the namespace
   would otherwise collide;
-- publishes ride a bounded worker, detached from the revocation call path.
+- revocation-kick publishes ride a bounded worker (capacity 256), detached from the revocation call path; message pushes publish inline and degrade to node-local delivery if Redis is unavailable.
 
 No additional configuration is required beyond Redis itself.
 

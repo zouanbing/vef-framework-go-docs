@@ -22,7 +22,7 @@ VEF 的认证发生在 API 操作层。每个操作都有自己的 auth 配置�
 - `api.Public()`
 - `api.BearerAuth()`
 - `api.SignatureAuth()`
-- `api.IPAuth(...)`（白名单解析方式见下文的 [Signature helpers](./authentication-reference#signature-helpers)）；空规则无效时允许全部 IP，有效规则全部异常时拒绝全部请求
+- `api.IPAuth(...)`（白名单解析方式见下文的 [Signature helpers](./authentication-reference#signature-helpers)）；内置策略是 fail-closed 的：缺失、空白或无法解析的白名单会一律以 `security.ErrIPNotAllowed`（HTTP 401）拒绝请求。“空名单允许全部 IP” 属于签名外部应用使用的底层 `IPWhitelistValidator` 的行为，而不是 `api.IPAuth(...)` 的行为
 - `api.APIKeyAuth(...)`
 - `api.HTTPBasicAuth()`
 

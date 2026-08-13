@@ -44,6 +44,21 @@ SelectExpr(func(eb orm.ExprBuilder) any {
 		ja.KeyColumn("code").Column("name")
 	})
 }, "code_map")
+
+// JSON_ARRAY_AGG
+SelectExpr(func(eb orm.ExprBuilder) any {
+	return eb.JSONArrayAgg(func(ja orm.JSONArrayAggBuilder) {
+		ja.Column("tag").Distinct()
+	})
+}, "tags")
+
+// Bitwise / boolean / statistical aggregates
+SelectExpr(func(eb orm.ExprBuilder) any { return eb.BitOr(func(b orm.BitOrBuilder) { b.Column("flag") }) }, "any_flag")
+SelectExpr(func(eb orm.ExprBuilder) any { return eb.BitAnd(func(b orm.BitAndBuilder) { b.Column("flag") }) }, "all_flags")
+SelectExpr(func(eb orm.ExprBuilder) any { return eb.BoolOr(func(b orm.BoolOrBuilder) { b.Column("active") }) }, "any_active")
+SelectExpr(func(eb orm.ExprBuilder) any { return eb.BoolAnd(func(b orm.BoolAndBuilder) { b.Column("active") }) }, "all_active")
+SelectExpr(func(eb orm.ExprBuilder) any { return eb.StdDev(func(s orm.StdDevBuilder) { s.Column("value") }) }, "stddev")
+SelectExpr(func(eb orm.ExprBuilder) any { return eb.Variance(func(v orm.VarianceBuilder) { v.Column("value") }) }, "variance")
 ```
 
 `JSONObjectAggBuilder` takes its keys from `KeyColumn(column)` or

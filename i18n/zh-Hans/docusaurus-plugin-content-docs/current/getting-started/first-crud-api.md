@@ -144,7 +144,7 @@ type ProductSearch struct {
 - `validate` 标签会在你的操作执行前自动运行；`label` 决定错误消息中的字段名称
 - `search` 标签会直接翻译成 `WHERE` 条件：`keyword` 变成对 `name` 或 `code` 的 `LIKE` 匹配，`minStock` 变成 `stock >= ?`
 - `ID` 在创建时留空（框架会生成），在更新时必填
-- 指针字段用于区分「未提供」和零值——更新只合并非空字段，因此 `IsActive *bool` 才能让客户端显式传 `false`
+- 请求参数里的指针字段用于区分「未提供」和零值。但模型里的 `IsActive` 是普通 `bool`，更新合并时仍然会把显式的 `false` 当作零值跳过，从而保持原值；如果需要把标志位清成 `false`，模型字段也必须是支持 nullable 的指针
 
 ## 4. 组装 API 资源
 
@@ -247,7 +247,7 @@ pattern = "vef.storage.*"
 transports = ["outbox", "memory"]
 ```
 
-相比快速开始，最后两个配置块是新增的。通用写操作会在事务内执行[文件存储](../infrastructure/storage.md)生命周期，而存储模块通过事务性传输发布领域事件——如果 `vef.storage.*` 事件没有这样的路由，框架会在启动时快速失败。启用 outbox 传输（它会自动创建自己的表）并把存储事件路由过去即可通过该检查；路由中把 `"memory"`（outbox 的默认 sink）与 `"outbox"` 写在一起，事件才能在进程内被订阅。
+与快速开始相比，这里只新增了 `path = "data/app.db"`，让主数据源指向第 2 步创建的文件。事件配置块与快速开始相同：框架在启动时始终会校验 `vef.storage.*` 事件拥有事务性路由，因此仍然需要 outbox 传输和路由规则。启用 outbox 传输（它会自动创建自己的表）并把存储事件路由过去即可通过该检查；路由中把 `"memory"`（outbox 的默认 sink）与 `"outbox"` 写在一起，事件才能在进程内被订阅。
 
 启动应用：
 

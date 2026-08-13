@@ -8,21 +8,20 @@ This page explains what happens between `vef.Run(...)` and a live HTTP server.
 
 ## Boot order
 
-This is the canonical statement of the VEF boot pipeline. It is assembled from
-`bootstrap.go` (`vef.Run`, which wires `config` and `datasource` directly) and
-`internal/bootmodules.Core()` (the ordered list of business modules shared by
-`vef.Run` and the `internal/apptest` test harness, so the two graphs cannot
-drift):
+This is the canonical statement of the VEF boot pipeline. It is assembled in
+`bootstrap.go` (`vef.Run`) and `internal/bootmodules/bootmodules.go` (the
+`Assemble` function shared by `vef.Run` and the `internal/apptest` test
+harness, so the two graphs cannot drift):
 
-`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> tx_memory -> outbox -> redis-stream -> inbox -> schema -> monitor -> mcp -> push -> app`
+`config -> datasource -> middleware -> api -> security -> event -> expression -> js -> cqrs -> cron -> redis -> lock -> mold -> storage -> sequence -> tx_memory -> outbox -> redis_stream -> inbox -> schema -> monitor -> mcp -> push -> app`
 
 `datasource` is a single step: it connects `*sql.DB` (via `internal/database`)
 and wraps it into `orm.DB` (via `internal/orm`) in one module — there is no
-separate `database` or `orm` boot step. `tx_memory`, `outbox`, `redis-stream`,
-and `inbox` are the event transport submodules — the tx_memory transport module,
-the outbox transport module, the redis-stream transport module, and the inbox
-module — registered after `sequence` and before `schema`. `js` is the shared
-JS engine module and `push` is the WebSocket push module.
+separate `database` or `orm` boot step. `tx_memory`, `outbox`, `redis_stream`,
+and `inbox` are the event transport submodules — the tx_memory transport
+module, the outbox transport module, the redis_stream transport module, and
+the inbox module — registered after `sequence` and before `schema`. `js` is
+the shared JS engine module and `push` is the WebSocket push module.
 
 Note the list order is for readability: FX resolves the actual construction
 order from declared dependencies, so what matters is the dependency shape —
@@ -42,13 +41,14 @@ order from declared dependencies, so what matters is the dependency shape —
 1. installs the framework FX logger with `fx.WithLogger(newFxLogger)`
 2. adds the internal config module
 3. adds the internal datasource module
-4. appends every option returned by `bootmodules.Core()`
+4. appends every option returned by `bootmodules.Assemble`
 5. appends the user-provided `options...`
-6. appends `fx.Invoke(startApp)`
-7. appends `fx.StartTimeout(defaultTimeout)`
-8. appends `fx.StopTimeout(defaultTimeout*2)`
-9. creates the app with `fx.New(opts...)`
-10. runs it with `app.Run()`
+6. appends `fx.Invoke(cron.StartScheduler)`
+7. appends `fx.Invoke(startApp)`
+8. appends `fx.StartTimeout(defaultTimeout)`
+9. appends `fx.StopTimeout(defaultTimeout*2)`
+10. creates the app with `fx.New(opts...)`
+11. runs it with `app.Run()`
 
 `defaultTimeout` is `30 * time.Second`, so the default start timeout is `30s`
 and the default stop timeout is `60s`.

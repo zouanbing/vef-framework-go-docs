@@ -161,10 +161,12 @@ The following claim keys appear in challenge tokens and in the standard
 | `rls` | (standard JWT claim) | User roles (`claimRoles`) — carried in access tokens and challenge tokens |
 | `rsd` | `ClaimChallengeResolved` | Resolved challenge types in resolution order — the types that have already been satisfied |
 
-The standard JWT claims (`jti`, `sub`, `iss`, `aud`, `iat`, `nbf`, `exp`, `typ`)
-are set by `JWT.Generate` and validated by `JWT.Parse` with issuer `JWTIssuer`
-(`vef`), audience `DefaultJWTAudience` (`vef-app`), 10-second `leeway`, and
-`HS256` signing.
+`JWT.Generate` sets `iss`, `aud`, `iat`, `nbf`, and `exp`. `jti`, `sub`, and
+`typ` are written by the caller's `JWTClaimsBuilder` before signing and are
+validated by `JWT.Parse`. The parser validates issuer `JWTIssuer` (`vef`),
+audience `JWTConfig.Audience` (the security module uses the snake-cased
+`vef.app.name` and falls back to `DefaultJWTAudience` (`vef-app`) only when no
+audience is configured), 10-second `leeway`, and `HS256` signing.
 
 Challenge tokens carry `typ: "challenge"` and expire after
 `ChallengeTokenExpires` (`5m`). The `sub` claim holds only the principal ID;
@@ -198,8 +200,11 @@ behind the convenience provider. TOTP uses `TOTPDefaultDestination`
 (`Authenticator App`) unless `WithTOTPDestination(...)` overrides it.
 
 `NewPasswordChangeChallengeProvider` uses `PasswordChangeChecker` and
-`PasswordChanger`; it returns `PasswordChangeChallengeData` when a password
-change is required. Common reason constants are `PasswordChangeReasonFirstLogin`
+`PasswordChanger`, and accepts an optional `security.PasswordValidator` (pass
+`nil` to skip strength validation; the framework's config-backed validator
+from `vef.security.password_policy` can be injected); it returns
+`PasswordChangeChallengeData` when a password change is required. Common reason
+constants are `PasswordChangeReasonFirstLogin`
 (`first_login`) and `PasswordChangeReasonExpired` (`expired`). The concrete provider type is
 `PasswordChangeChallengeProvider`.
 `NewDepartmentSelectionChallengeProvider` uses `DepartmentLoader` and
@@ -259,7 +264,9 @@ resolved, `SignatureAuthenticator` also fails closed with `ErrIPNotAllowed`.
 counterpart used by the built-in `api.IPAuth(...)` strategy. The strategy
 resolves a named `security.IPWhitelist` through `security.IPWhitelistLoader`;
 the default loader reads `vef.security.ip_whitelists`, while applications may
-provide their own loader for database or config-center backed lists.
+provide their own loader for database or config-center backed lists. The
+built-in strategy is fail-closed: a missing, empty, or unparseable whitelist
+denies every request with `security.ErrIPNotAllowed` (HTTP 401).
 
 Signature storage keys and defaults:
 
@@ -353,11 +360,11 @@ Fiber error mapping):
 
 | Constant | Message ID | Triggered by |
 | --- | --- | --- |
-| `ErrMessageUnauthenticated` | `security_unauthenticated` | `ErrUnauthenticated` — sentinel returned when no bearer token is present |
+| `ErrMessageUnauthenticated` | `security_unauthenticated` | `ErrUnauthenticated` — message ID behind the generic `1000` unauthenticated response; a missing bearer token surfaces as HTTP 401 mapped to this code/message by the global error handler |
 | `ErrMessageExternalAppLoaderNotImplemented` | `security_external_app_loader_not_implemented` | `SignatureAuthenticator.Authenticate` when `ExternalAppLoader` is nil |
 | `ErrMessageCredentialsFormatInvalid` | `security_credentials_format_invalid` | `SignatureAuthenticator.Authenticate` when credentials are not `*SignatureCredentials` |
 | `ErrMessageUnsupportedAuthenticationType` | `security_unsupported_authentication_type` | `AuthManager.Authenticate` when no authenticator supports the given `type` |
-| `ErrMessageUserLoaderNotImplemented` | `security_user_loader_not_implemented` | `JWTRefreshAuthenticator.Authenticate` when `UserLoader` is nil |
+| `ErrMessageUserLoaderNotImplemented` | `security_user_loader_not_implemented` | `PasswordAuthenticator.Authenticate` and `JWTRefreshAuthenticator.Authenticate` when `UserLoader` is nil |
 | `ErrMessageUserInfoLoaderNotImplemented` | `security_user_info_loader_not_implemented` | `AuthResource.GetUserInfo` when `UserInfoLoader` is nil |
 | `ErrMessageChallengeResolveFailed` | `security_challenge_resolve_failed` | `resolve_challenge` normalizes bare errors from `ChallengeProvider.Resolve` |
 
@@ -380,7 +387,7 @@ complete wire contract, including every response field.
 | `get_user_info` | Bearer auth | API engine default | raw `params` map | `UserInfo` |
 
 The custom limits set only `max`; the window falls back to the API engine's
-default rate-limit period (`vef.api.rate_limit`, default `5m`). Operations
+default rate-limit period (`vef.api.rate_limit.period`, default `5m`). Operations
 without a custom limit inherit the engine default entirely (stock `100`
 requests per `5m`). Under `token_type = "opaque_token"` the `refresh`
 operation is not mounted at all — calling it fails with the
@@ -422,8 +429,9 @@ to this account. `data.tokens` is an `AuthTokens`:
 }
 ```
 
-The payload carries no expiry fields — token lifetimes are deployment
-configuration, communicated out of band.
+The JSON response carries no expiry fields — token lifetimes are deployment
+configuration, communicated out of band. (The JWTs themselves carry the
+standard `exp`/`iat`/`nbf` claims.)
 
 **Shape 2 — challenge envelope.** The credential verified, but at least one
 [challenge provider](#challenge-providers) requires a second step. No auth

@@ -47,7 +47,7 @@ access token 无法被"洗"成长期 refresh token 或额外会话。
 3. 将其存入某个 `security.SessionStore`
 4. 将原始令牌作为 `AuthTokens.AccessToken` 返回（没有 refresh token——会话本身会在使用时自我续期，因此不存在需要单独刷新的东西）
 
-在之后每一次已认证请求中，`OpaqueTokenAuthenticator` 会对请求携带的 bearer 令牌取哈希，并调用 `SessionStore.Lookup`。命中后直接返回该会话中的 `Principal` 快照——无需再查一次数据库，因为这就是会话开启时（或最近一次续期时）生效的用户数据。
+在之后每一次已认证请求中，`OpaqueTokenAuthenticator` 会对请求携带的 bearer 令牌取哈希，并调用 `SessionStore.Lookup`。命中后直接返回该会话中的 `Principal` 快照——无需再查一次数据库，因为快照只在会话创建时写入；续期只会延长有效期，不会刷新 principal。
 
 ### 滑动空闲超时，受绝对生命周期上限约束
 

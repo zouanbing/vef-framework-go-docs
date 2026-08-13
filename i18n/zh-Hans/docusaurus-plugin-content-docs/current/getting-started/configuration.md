@@ -108,6 +108,41 @@ allow_origins = ["http://localhost:3000", "https://my-app.com"]
 - `enabled`：是否启用 CORS 中间件
 - `allow_origins`：允许的来源列表
 
+### `vef.event`
+
+事件总线、传输、路由与消费中间件配置。最常见的最小化配置是启用 outbox
+传输并路由存储事件：
+
+```toml
+[vef.event.transports.outbox]
+enabled = true
+
+[[vef.event.routing]]
+pattern    = "vef.storage.*"
+transports = ["outbox", "memory"]
+```
+
+关键字段：
+
+- `default_transport`：没有匹配路由时的回退传输；默认 `"memory"`
+- `async_queue_size`：异步 fan-in 队列容量；默认 `4096`
+- `async_workers`：异步队列消费 goroutine 数；默认 `4`
+- `publish_timeout`：单次 transport.Publish 调用超时上限；默认 `5s`
+
+按传输类型划分的配置块：
+
+- `vef.event.transports.memory`：进程内传输（`queue_size`、`full_policy`、`publish_timeout`）
+- `vef.event.transports.tx_memory`：进程内事务性传输；默认关闭（`enabled = false`）
+- `vef.event.transports.outbox`：持久化 outbox（`enabled`、`relay_interval`、`max_retries`、`batch_size`、`sink`、`cleanup_interval`、`completed_ttl`）
+- `vef.event.transports.redis_stream`：Redis Streams 传输；默认关闭（`enabled = false`）
+
+中间件与 inbox 开关：
+
+- `vef.event.middleware`：`logging`、`tracing`、`tracing_strict`、`metrics`、`recover`、`inbox`
+- `vef.event.inbox`：`retention`、`processing_lease`、`cleanup_interval`
+
+路由规则按顺序匹配，第一条 `pattern` 命中的规则生效；`transports` 列出多个目标时表示 fan-out。
+
 ### `vef.security`
 
 安全相关运行时配置：
@@ -222,7 +257,7 @@ secret_key = "base64-key"
 enabled = true       # /ws WebSocket 推送端点
 ```
 
-完整键位列表见[配置参考](../reference/configuration-reference#vef-cron)
+完整键位列表见[配置参考](../reference/configuration-reference#vefcron)
 与各模块指南：[持久化调度](../infrastructure/cron-store)、
 [集成引擎](../integration/overview)、[服务端推送](../infrastructure/push)。
 

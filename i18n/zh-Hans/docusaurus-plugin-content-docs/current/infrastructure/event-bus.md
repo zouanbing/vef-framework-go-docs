@@ -16,7 +16,7 @@ VEF 把事件系统做成了一个可插拔的多 transport 平台，对外通�
 | --- | --- |
 | `event.Bus` | 发布 + 订阅入口 |
 | `event.RouteInspector` | 路由只读查询 —— 用于在 OnStart 做快速失败检查 |
-| `transport.Transport`（FX group `vef:event:transports`） | 所有已注册 transport（memory、outbox、redis-stream、自定义） |
+| `transport.Transport`（FX group `vef:event:transports`） | 所有已注册 transport（memory、tx_memory、outbox、redis-stream、自定义） |
 | `event.ErrorSink` | 处理非同步发布失败（默认按 error 级别打日志） |
 
 Bus 生命周期由 FX 驱动。`fx.Provide` 阶段调用 Publish 会返回 `event.ErrBusNotStarted`，应该改成 `fx.Invoke` 或 OnStart 钩子。
@@ -103,7 +103,9 @@ unsub, err := event.SubscribeTyped(bus,
 )
 ```
 
-T 可以是指针类型（推荐）也可以是其指针实现了 `Event` 的值类型。bus 同时兼容进程内投递（payload 已是 T）和跨进程投递（`RawPayload`，canonical JSON body）。`SubscribeTyped[event.Event]` 会返回 `event.ErrNilTypeParameter`。
+T 可以是指针类型（推荐）也可以是其指针实现了 `Event` 的值类型。bus 始终将事件序列化为 canonical JSON frame；即使是进程内投递也会经过
+marshal/unmarshal 往返，因此 handler 总是收到 `RawPayload`，再由
+`SubscribeTyped[T]` 解码为 `T`。`SubscribeTyped[event.Event]` 会返回 `event.ErrNilTypeParameter`。
 
 ## Envelope 与 Frame
 
@@ -119,9 +121,9 @@ T 可以是指针类型（推荐）也可以是其指针实现了 `Event` 的值
 | `TraceID` / `SpanID` | tracing 中间件启用时写入 |
 | `CorrelationID` | 来自 `WithCorrelationID(...)`；省略时使用 `contextx.RequestID(ctx)` |
 | `Headers` | `WithHeaders(...)` 和中间件合并出的调用方元数据 |
-| `Payload` | 进程内投递时是原始 `Event`；跨进程后是 `RawPayload` |
+| `Payload` | 每次投递都是 `RawPayload`——bus 把每个事件 JSON 编码成 frame（即使是进程内 transport），消费侧再解码；`SubscribeTyped[T]` 会透明地解码为 `T` |
 
-跨进程 transport 会把 body 序列化进 `transport.Frame`（Body 为 canonical JSON），bus 在收到时解码回 `Envelope.Payload = RawPayload{...}`，再交给 `SubscribeTyped[T]` 反序列化。
+跨进程 transport 会把 body 序列化进 `transport.Frame`（Body 为事件的 canonical JSON body），bus 在收到时解码回 `Envelope.Payload = RawPayload{...}`，再交给 `SubscribeTyped[T]` 反序列化。
 
 `CorrelationID` 会跨越所有 transport 边界，包括 outbox 和 Redis Streams。如果你的部署里 request ID 属于敏感数据，应注册 publish middleware，在持久化 transport 看到 frame 之前清空或替换 `Envelope.CorrelationID`。
 
@@ -230,7 +232,7 @@ Bus 会运行 FX group `vef:event:publish-middlewares` 和 `vef:event:consume-mi
 | `event/transport/memory` | `Name`, `Config`, `FullPolicy`, `FullPolicyError`, `FullPolicyBlock`, `FullPolicyDropOldest` |
 | `event/transport/outbox` | `Name`, `Config`, `Status`, `StatusPending`, `StatusProcessing`, `StatusCompleted`, `StatusFailed`, `StatusDead`, `Record`, `Repository` |
 | `event/transport/redisstream` | `Name` 和 `Config` |
-| `event/transport/txmemory` | `Name` 和 `Config` |
+| `event/transport/txmemory` | `Name`（配置位于 `[vef.event.transports.tx_memory]`） |
 
 `ChainPublish` 和 `ChainConsume` 会按升序 `Order` 排列 middleware；相同
 order 保留注册顺序。内置 cron job 名称是 `vef:event:outbox:relay`、
